@@ -8,9 +8,8 @@ services:
       - "80:5000"
     volumes:
       - ./app:/home/app
-    environment:
-      - FLASK_ENV=development
-      - DATABASE_URL=postgresql://ecommerce:ecommerce123@postgres:5432/ecommerce
+    env_file:
+      - .env
     depends_on:
       - postgres
     restart: unless-stopped
@@ -18,10 +17,12 @@ services:
   postgres:
     image: postgres:16
     container_name: ecommerce_postgres
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: ecommerce
-      POSTGRES_USER: ecommerce
-      POSTGRES_PASSWORD: ecommerce123
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
