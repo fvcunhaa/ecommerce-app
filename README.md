@@ -13,6 +13,7 @@ Este projeto foi criado para demonstração, testes, estudo e integração com f
 - PostgreSQL 16
 - Docker
 - Docker Compose
+- Kubernetes
 
 ---
 
@@ -24,6 +25,13 @@ ecommerce-app/
 │   ├── main.py
 │   └── templates/
 │       └── index.html
+├── k8s/
+│   ├── 00-namespace.yaml
+│   ├── 01-secret.yaml
+│   ├── 02-postgres-pvc.yaml
+│   ├── 03-postgres.yaml
+│   ├── 04-app.yaml
+│   └── 05-ingress.yaml
 ├── Dockerfile
 ├── docker-compose.yaml
 ├── requirements.txt
@@ -59,7 +67,7 @@ DATABASE_URL=postgresql://ecommerce:ecommerce123@postgres:5432/ecommerce
 
 ---
 
-## Como executar a aplicação
+## Como executar com Docker Compose
 
 Clone o projeto:
 
@@ -304,7 +312,7 @@ ultima_atualizacao
 
 ---
 
-## Acessar o PostgreSQL
+## Acessar o PostgreSQL com Docker Compose
 
 Entre no banco com:
 
@@ -400,7 +408,7 @@ Se a quantidade continuar, significa que os dados estão persistidos corretament
 
 ---
 
-## Parar a aplicação
+## Parar a aplicação com Docker Compose
 
 ```bash
 docker compose down
@@ -408,7 +416,7 @@ docker compose down
 
 ---
 
-## Subir novamente
+## Subir novamente com Docker Compose
 
 ```bash
 docker compose up -d
@@ -440,7 +448,7 @@ docker compose up -d --build
 
 ---
 
-## Logs da aplicação
+## Logs com Docker Compose
 
 Ver logs do Flask:
 
@@ -453,6 +461,277 @@ Ver logs do PostgreSQL:
 ```bash
 docker logs -f ecommerce_postgres
 ```
+
+---
+
+# Deploy em Kubernetes
+
+Este projeto também possui exemplos de manifests Kubernetes na pasta `k8s/`.
+
+Esses arquivos servem como referência para subir a aplicação em um cluster Kubernetes com PostgreSQL.
+
+> Observação: este repositório deixa os manifests prontos como exemplo. Antes de aplicar em um cluster real, publique a imagem Docker em um registry ou altere o campo `image` no arquivo `k8s/04-app.yaml`.
+
+---
+
+## Estrutura dos manifests Kubernetes
+
+```text
+k8s/
+├── 00-namespace.yaml
+├── 01-secret.yaml
+├── 02-postgres-pvc.yaml
+├── 03-postgres.yaml
+├── 04-app.yaml
+└── 05-ingress.yaml
+```
+
+---
+
+## Recursos criados no Kubernetes
+
+Os manifests criam:
+
+```text
+Namespace: ecommerce-lab
+Secret: ecommerce-secret
+PVC: postgres-pvc
+Deployment: postgres
+Service: postgres
+Deployment: ecommerce-app
+Service: ecommerce-app
+Ingress: ecommerce-app
+```
+
+---
+
+## Atenção sobre a imagem Docker
+
+O arquivo `k8s/04-app.yaml` usa a seguinte imagem como exemplo:
+
+```text
+ghcr.io/fvcunhaa/ecommerce-app:latest
+```
+
+Antes de aplicar em um cluster Kubernetes real, é necessário publicar a imagem Docker em um registry ou alterar o campo `image` no arquivo:
+
+```text
+k8s/04-app.yaml
+```
+
+Exemplo usando Docker Hub:
+
+```yaml
+image: docker.io/SEU-USUARIO/ecommerce-app:latest
+```
+
+Exemplo usando GitHub Container Registry:
+
+```yaml
+image: ghcr.io/SEU-USUARIO/ecommerce-app:latest
+```
+
+---
+
+## Como publicar a imagem manualmente
+
+Exemplo com Docker Hub:
+
+```bash
+docker build -t SEU-USUARIO/ecommerce-app:latest .
+docker login
+docker push SEU-USUARIO/ecommerce-app:latest
+```
+
+Depois altere o arquivo `k8s/04-app.yaml`:
+
+```yaml
+image: docker.io/SEU-USUARIO/ecommerce-app:latest
+```
+
+Exemplo com GitHub Container Registry:
+
+```bash
+docker build -t ghcr.io/SEU-USUARIO/ecommerce-app:latest .
+docker login ghcr.io
+docker push ghcr.io/SEU-USUARIO/ecommerce-app:latest
+```
+
+Depois altere o arquivo `k8s/04-app.yaml`:
+
+```yaml
+image: ghcr.io/SEU-USUARIO/ecommerce-app:latest
+```
+
+---
+
+## Aplicar no Kubernetes
+
+Com `kubectl` configurado para o cluster:
+
+```bash
+kubectl apply -f k8s/
+```
+
+---
+
+## Verificar recursos criados
+
+```bash
+kubectl get all -n ecommerce-lab
+kubectl get pvc -n ecommerce-lab
+kubectl get secrets -n ecommerce-lab
+kubectl get ingress -n ecommerce-lab
+```
+
+---
+
+## Acessar via NodePort
+
+O service da aplicação usa NodePort na porta `30080`.
+
+Acesse:
+
+```text
+http://IP-DO-NODE:30080
+```
+
+Exemplos:
+
+```bash
+curl http://IP-DO-NODE:30080/status
+curl http://IP-DO-NODE:30080/api/dashboard
+curl http://IP-DO-NODE:30080/api/coleta
+```
+
+---
+
+## Acessar com Minikube
+
+Se estiver usando Minikube:
+
+```bash
+minikube service ecommerce-app -n ecommerce-lab
+```
+
+Ou veja o IP do Minikube:
+
+```bash
+minikube ip
+```
+
+Depois acesse:
+
+```text
+http://IP-DO-MINIKUBE:30080
+```
+
+---
+
+## Acessar com Ingress
+
+O arquivo `k8s/05-ingress.yaml` é opcional e depende de um Ingress Controller instalado no cluster, como NGINX Ingress Controller.
+
+Host configurado no exemplo:
+
+```text
+ecommerce.local
+```
+
+Para teste local, adicione no `/etc/hosts` da sua máquina:
+
+```text
+IP-DO-INGRESS ecommerce.local
+```
+
+Depois acesse:
+
+```text
+http://ecommerce.local
+```
+
+---
+
+## Ver logs no Kubernetes
+
+Ver logs da aplicação:
+
+```bash
+kubectl logs -f deployment/ecommerce-app -n ecommerce-lab
+```
+
+Ver logs do PostgreSQL:
+
+```bash
+kubectl logs -f deployment/postgres -n ecommerce-lab
+```
+
+---
+
+## Entrar no PostgreSQL no Kubernetes
+
+```bash
+kubectl exec -it deployment/postgres -n ecommerce-lab -- psql -U ecommerce -d ecommerce
+```
+
+Consultar vendas:
+
+```sql
+SELECT COUNT(*) FROM vendas;
+
+SELECT id, estado, produto, forma_pagamento, total, data
+FROM vendas
+ORDER BY id DESC
+LIMIT 10;
+```
+
+Sair do PostgreSQL:
+
+```sql
+\q
+```
+
+---
+
+## Remover ambiente Kubernetes
+
+Remover usando os manifests:
+
+```bash
+kubectl delete -f k8s/
+```
+
+Ou remover o namespace inteiro:
+
+```bash
+kubectl delete namespace ecommerce-lab
+```
+
+---
+
+## Observação sobre credenciais no Kubernetes
+
+As credenciais no arquivo `k8s/01-secret.yaml` são de laboratório:
+
+```text
+POSTGRES_DB=ecommerce
+POSTGRES_USER=ecommerce
+POSTGRES_PASSWORD=ecommerce123
+```
+
+Em produção, não versionar secrets reais no GitHub.
+
+Para produção, recomenda-se:
+
+- Usar secrets gerenciados pelo provedor cloud
+- Usar External Secrets Operator ou Sealed Secrets
+- Não expor o PostgreSQL publicamente
+- Usar senhas fortes
+- Configurar backup do banco
+- Configurar limites de CPU e memória
+- Configurar probes com tempos adequados
+- Usar Ingress com HTTPS
+- Restringir acesso por firewall ou Security Groups
 
 ---
 
@@ -473,7 +752,7 @@ git push
 
 Este projeto é apenas para laboratório, estudo e demonstração.
 
-As credenciais presentes no arquivo `.env` são credenciais simples de lab:
+As credenciais presentes no arquivo `.env` e nos manifests Kubernetes são credenciais simples de lab:
 
 ```text
 User: ecommerce
@@ -483,6 +762,7 @@ Password: ecommerce123
 Para produção, recomenda-se:
 
 - Não versionar o arquivo `.env`
+- Não versionar secrets Kubernetes reais
 - Usar senhas fortes
 - Usar secrets do ambiente
 - Não expor o PostgreSQL publicamente
