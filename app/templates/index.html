@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Dashboard Ecommerce</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body {
+      background: #020617;
+      color: #e5e7eb;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+
+    .header h1 {
+      font-size: 34px;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+
+    .info-coleta {
+      color: #94a3b8;
+      font-size: 13px;
+    }
+
+    button {
+      border: none;
+      background: #2563eb;
+      color: white;
+      padding: 13px 18px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+    }
+
+    .card span {
+      display: block;
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .card strong {
+      font-size: 28px;
+      color: #f8fafc;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 18px;
+      padding: 22px;
+      min-height: 360px;
+    }
+
+    .panel h2 {
+      font-size: 20px;
+      margin-bottom: 16px;
+      color: #f8fafc;
+    }
+
+    canvas {
+      width: 100%;
+      max-height: 300px;
+    }
+
+    .section-title {
+      margin: 30px 0 16px;
+      font-size: 22px;
+      color: #f8fafc;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 18px;
+      margin-bottom: 28px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+    }
+
+    th, td {
+      padding: 14px;
+      border-bottom: 1px solid #1e293b;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      color: #93c5fd;
+      background: #020617;
+      font-weight: bold;
+    }
+
+    td {
+      color: #e5e7eb;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 9px;
+      background: #1d4ed8;
+      color: white;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .badge-success {
+      background: #14532d;
+      color: #bbf7d0;
+    }
+
+    .badge-error {
+      background: #7f1d1d;
+      color: #fecaca;
+    }
+
+    .badge-warning {
+      background: #78350f;
+      color: #fde68a;
+    }
+
+    .muted {
+      color: #94a3b8;
+    }
+
+    .loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    @media (max-width: 1100px) {
+      .cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 650px) {
+      body {
+        padding: 12px;
+      }
+
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .header h1 {
+        font-size: 26px;
+      }
+
+      .card strong {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container" id="dashboardContainer">
+
+    <div class="header">
+      <div>
+        <h1>Dashboard Ecommerce</h1>
+        <p>Dados simulados, dinâmicos, crescentes e relacionados.</p>
+        <div class="info-coleta" id="infoColeta">Carregando dados...</div>
+      </div>
+
+      <div>
+        <button onclick="carregarDashboard()">Atualizar painel</button>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <span>Vendas totais</span>
+        <strong id="vendasTotal">R$ 0,00</strong>
+      </div>
+
+      <div class="card">
+        <span>Total de pedidos</span>
+        <strong id="totalPedidos">0</strong>
+      </div>
+
+      <div class="card">
+        <span>Ticket médio</span>
+        <strong id="ticketMedio">R$ 0,00</strong>
+      </div>
+
+      <div class="card">
+        <span>Abandono de carrinho</span>
+        <strong id="abandonoCarrinho">0%</strong>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <span>Carrinhos criados</span>
+        <strong id="carrinhosCriados">0</strong>
+      </div>
+
+      <div class="card">
+        <span>Carrinhos abandonados</span>
+        <strong id="carrinhosAbandonados">0</strong>
+      </div>
+
+      <div class="card">
+        <span>Total de frete</span>
+        <strong id="totalFrete">R$ 0,00</strong>
+      </div>
+
+      <div class="card">
+        <span>Total em descontos</span>
+        <strong id="totalDescontos">R$ 0,00</strong>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Vendas por Estado</h2>
+        <canvas id="graficoEstados"></canvas>
+      </div>
+
+      <div class="panel">
+        <h2>Vendas por Forma de Pagamento</h2>
+        <canvas id="graficoPagamentos"></canvas>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Pedidos por Forma de Pagamento</h2>
+        <canvas id="graficoPedidosPagamento"></canvas>
+      </div>
+
+      <div class="panel">
+        <h2>Carrinhos Convertidos x Abandonados</h2>
+        <canvas id="graficoCarrinhos"></canvas>
+      </div>
+    </div>
+
+    <h2 class="section-title">Dados por Estado</h2>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Estado</th>
+            <th>Total Vendas</th>
+            <th>Pedidos</th>
+            <th>Ticket Médio</th>
+            <th>Mais Vendido</th>
+            <th>Menos Vendido</th>
+          </tr>
+        </thead>
+
+        <tbody id="tabelaEstados"></tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title">Pagamentos</h2>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Forma</th>
+            <th>Total Vendas</th>
+            <th>Total Pedidos</th>
+            <th>% Pedidos</th>
+            <th>% Valor</th>
+          </tr>
+        </thead>
+
+        <tbody id="tabelaPagamentos"></tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title">Métricas dos Endpoints</h2>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Chamadas</th>
+            <th>Sucessos</th>
+            <th>Falhas</th>
+            <th>Taxa Sucesso</th>
+            <th>Taxa Erro</th>
+            <th>Último Status</th>
+            <th>Latência Média</th>
+            <th>Última Chamada</th>
+          </tr>
+        </thead>
+
+        <tbody id="tabelaEndpoints"></tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title">Últimas Vendas</h2>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Data</th>
+            <th>Estado</th>
+            <th>Produto</th>
+            <th>Pagamento</th>
+            <th>Quantidade</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+
+        <tbody id="tabelaUltimasVendas"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script>
+    let graficoEstados = null;
+    let graficoPagamentos = null;
+    let graficoPedidosPagamento = null;
+    let graficoCarrinhos = null;
+
+    function formatarMoeda(valor) {
+      return Number(valor || 0).toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      });
+    }
+
+    function destruirGrafico(grafico) {
+      if (grafico) {
+        grafico.destroy();
+      }
+    }
+
+    async function carregarDashboard() {
+      const container = document.getElementById("dashboardContainer");
+      container.classList.add("loading");
+
+      try {
+        const resposta = await fetch("/api/dashboard");
+        const dados = await resposta.json();
+
+        preencherResumo(dados);
+        montarGraficoEstados(dados.estados || []);
+        montarGraficoPagamentos(dados.pagamentos || []);
+        montarGraficoPedidosPagamento(dados.pagamentos || []);
+        montarGraficoCarrinhos(dados.resumo || {});
+        montarTabelaEstados(dados.estados || []);
+        montarTabelaPagamentos(dados.pagamentos || []);
+        await carregarEndpoints();
+        await carregarUltimasVendas();
+
+      } catch (erro) {
+        console.error("Erro ao carregar dashboard:", erro);
+        alert("Erro ao carregar dashboard. Verifique se a API está online.");
+      } finally {
+        container.classList.remove("loading");
+      }
+    }
+
+    function preencherResumo(dados) {
+      const resumo = dados.resumo || {};
+      const coleta = dados.coleta || {};
+
+      document.getElementById("infoColeta").innerText =
+        `Coleta número ${coleta.numero || 0} | Última atualização: ${coleta.ultima_atualizacao || "inicial"}`;
+
+      document.getElementById("vendasTotal").innerText =
+        formatarMoeda(resumo.vendas_total_ecommerce);
+
+      document.getElementById("totalPedidos").innerText =
+        resumo.total_pedidos || 0;
+
+      document.getElementById("ticketMedio").innerText =
+        formatarMoeda(resumo.ticket_medio_ecommerce);
+
+      document.getElementById("abandonoCarrinho").innerText =
+        `${resumo.taxa_abandono_carrinho || 0}%`;
+
+      document.getElementById("carrinhosCriados").innerText =
+        resumo.carrinhos_criados || 0;
+
+      document.getElementById("carrinhosAbandonados").innerText =
+        resumo.carrinhos_abandonados || 0;
+
+      document.getElementById("totalFrete").innerText =
+        formatarMoeda(resumo.total_frete);
+
+      document.getElementById("totalDescontos").innerText =
+        formatarMoeda(resumo.total_descontos);
+    }
+
+    function montarGraficoEstados(estados) {
+      destruirGrafico(graficoEstados);
+
+      const labels = estados.map(item => item.estado);
+      const valores = estados.map(item => item.total_vendas);
+
+      graficoEstados = new Chart(document.getElementById("graficoEstados"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Total de Vendas",
+            data: valores
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: "#e5e7eb"
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: "#94a3b8"
+              },
+              grid: {
+                color: "#1e293b"
+              }
+            },
+            y: {
+              ticks: {
+                color: "#94a3b8"
+              },
+              grid: {
+                color: "#1e293b"
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function montarGraficoPagamentos(pagamentos) {
+      destruirGrafico(graficoPagamentos);
+
+      const labels = pagamentos.map(item => item.forma_pagamento);
+      const valores = pagamentos.map(item => item.total_vendas);
+
+      graficoPagamentos = new Chart(document.getElementById("graficoPagamentos"), {
+        type: "doughnut",
+        data: {
+          labels,
+          datasets: [{
+            label: "Vendas",
+            data: valores
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: "#e5e7eb"
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function montarGraficoPedidosPagamento(pagamentos) {
+      destruirGrafico(graficoPedidosPagamento);
+
+      const labels = pagamentos.map(item => item.forma_pagamento);
+      const valores = pagamentos.map(item => item.total_pedidos);
+
+      graficoPedidosPagamento = new Chart(document.getElementById("graficoPedidosPagamento"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Pedidos",
+            data: valores
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: "#e5e7eb"
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: "#94a3b8"
+              },
+              grid: {
+                color: "#1e293b"
+              }
+            },
+            y: {
+              ticks: {
+                color: "#94a3b8"
+              },
+              grid: {
+                color: "#1e293b"
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function montarGraficoCarrinhos(resumo) {
+      destruirGrafico(graficoCarrinhos);
+
+      graficoCarrinhos = new Chart(document.getElementById("graficoCarrinhos"), {
+        type: "pie",
+        data: {
+          labels: ["Convertidos", "Abandonados"],
+          datasets: [{
+            data: [
+              resumo.total_pedidos || 0,
+              resumo.carrinhos_abandonados || 0
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: "#e5e7eb"
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function montarTabelaEstados(estados) {
+      const tbody = document.getElementById("tabelaEstados");
+      tbody.innerHTML = "";
+
+      estados.forEach(item => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td><span class="badge">${item.estado}</span></td>
+          <td>${formatarMoeda(item.total_vendas)}</td>
+          <td>${item.total_pedidos}</td>
+          <td>${formatarMoeda(item.ticket_medio)}</td>
+          <td>${item.produto_mais_vendido.produto} (${item.produto_mais_vendido.quantidade})</td>
+          <td>${item.produto_menos_vendido.produto} (${item.produto_menos_vendido.quantidade})</td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function montarTabelaPagamentos(pagamentos) {
+      const tbody = document.getElementById("tabelaPagamentos");
+      tbody.innerHTML = "";
+
+      pagamentos.forEach(item => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td><span class="badge">${item.forma_pagamento}</span></td>
+          <td>${formatarMoeda(item.total_vendas)}</td>
+          <td>${item.total_pedidos}</td>
+          <td>${item.percentual_pedidos || 0}%</td>
+          <td>${item.percentual_valor || 0}%</td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function carregarEndpoints() {
+      try {
+        const resposta = await fetch("/api/metrica/endpoints");
+        const dados = await resposta.json();
+
+        const tbody = document.getElementById("tabelaEndpoints");
+        tbody.innerHTML = "";
+
+        const endpoints = dados.dados || [];
+
+        endpoints.forEach(item => {
+          const tr = document.createElement("tr");
+
+          const statusClass =
+            item.ultimo_status >= 400 ? "badge-error" :
+            item.ultimo_status ? "badge-success" :
+            "badge-warning";
+
+          tr.innerHTML = `
+            <td>${item.endpoint}</td>
+            <td>${item.total_chamadas}</td>
+            <td>${item.sucessos}</td>
+            <td>${item.falhas}</td>
+            <td>${item.taxa_sucesso}%</td>
+            <td>${item.taxa_erro}%</td>
+            <td><span class="badge ${statusClass}">${item.ultimo_status || "-"}</span></td>
+            <td>${item.latencia_media_ms} ms</td>
+            <td>${item.ultima_chamada || "-"}</td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+
+      } catch (erro) {
+        console.error("Erro ao carregar endpoints:", erro);
+      }
+    }
+
+    async function carregarUltimasVendas() {
+      try {
+        const resposta = await fetch("/api/vendas/ultimas");
+        const dados = await resposta.json();
+
+        const tbody = document.getElementById("tabelaUltimasVendas");
+        tbody.innerHTML = "";
+
+        const vendas = dados.vendas || [];
+
+        [...vendas].reverse().forEach(venda => {
+          const tr = document.createElement("tr");
+
+          tr.innerHTML = `
+            <td>${venda.id}</td>
+            <td>${venda.data}</td>
+            <td><span class="badge">${venda.estado}</span></td>
+            <td>${venda.produto}</td>
+            <td><span class="badge">${venda.forma_pagamento}</span></td>
+            <td>${venda.quantidade}</td>
+            <td>${formatarMoeda(venda.total)}</td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+
+      } catch (erro) {
+        console.error("Erro ao carregar últimas vendas:", erro);
+      }
+    }
+
+    carregarDashboard();
+  </script>
+
+</body>
+</html>

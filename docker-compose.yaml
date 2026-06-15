@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: ecommerce_app
+    ports:
+      - "80:5000"
+    volumes:
+      - ./app:/home/app
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://ecommerce:ecommerce123@postgres:5432/ecommerce
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: ecommerce_postgres
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

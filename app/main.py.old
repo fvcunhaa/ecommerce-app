@@ -1,0 +1,55 @@
+from flask import Flask, jsonify, render_template
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/status')
+def status():
+    return jsonify({"status": 1})
+
+@app.route('/login')
+def login():
+    return jsonify({"status": 1})
+
+@app.route('/carrinho/criar')
+def carrinho_criar():
+    return jsonify({"status": 1})
+
+@app.route('/produtos')
+def produtos():
+    return jsonify({"status": 1})
+
+@app.route('/carrinho/adicionar')
+def carrinho_adicionar():
+    return jsonify({"status": 1})
+
+@app.route('/carrinho/resumo')
+def carrinho_resumo():
+    return jsonify({"status": 1})
+
+@app.route('/endereco')
+def endereco():
+    return jsonify({"status": 1})
+
+@app.route('/pagamento/pix')
+def pagamento_pix():
+    return jsonify({"status": 1})
+
+@app.route('/pagamento/boleto')
+def pagamento_boleto():
+    # Aqui simulamos uma falha proposital
+    return jsonify({"status": 0})
+
+@app.route('/pagamento/cartao')
+def pagamento_cartao():
+    return jsonify({"status": 1})
+
+@app.route('/sucesso')
+def sucesso():
+    return jsonify({"status": 1})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

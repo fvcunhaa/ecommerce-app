@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Mini E-commerce</title>
+</head>
+<body style="font-family: sans-serif; margin: 30px;">
+    <h1>Mini E-commerce API</h1>
+    <p>Esta é uma aplicação Flask simples para testar os endpoints.</p>
+    <ul>
+        <li><a href="/status">/status</a></li>
+        <li><a href="/login">/login</a></li>
+        <li><a href="/produtos">/produtos</a></li>
+        <li><a href="/carrinho/criar">/carrinho/criar</a></li>
+        <li><a href="/carrinho/adicionar">/carrinho/adicionar</a></li>
+        <li><a href="/carrinho/resumo">/carrinho/resumo</a></li>
+        <li><a href="/endereco">/endereco</a></li>
+        <li><a href="/pagamento/pix">/pagamento/pix</a></li>
+        <li><a href="/pagamento/boleto">/pagamento/boleto</a></li>
+        <li><a href="/pagamento/cartao">/pagamento/cartao</a></li>
+        <li><a href="/sucesso">/sucesso</a></li>
+    </ul>
+</body>
+</html>
