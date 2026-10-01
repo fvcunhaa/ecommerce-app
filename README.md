@@ -484,3 +484,51 @@ Os serviços `obsstore-api`, `obsstore-payment` e `obsstore-shipping` são inici
 O simulador não gera traces, não define latências e não fabrica falhas de aplicação. Ele apenas produz jornadas. Latência e rejeição de pagamento pertencem ao comportamento do `payment-service`; cálculo de frete pertence ao `shipping-service`; persistência pertence à API e ao PostgreSQL.
 
 Quando o receiver OTLP do Zabbix Proxy 8 estiver disponível, todos os serviços poderão usar o mesmo destino através das variáveis `OTEL_EXPORTER_OTLP_*`.
+
+
+## Deploy com imagens pré-buildadas
+
+O GitHub Actions publica quatro imagens no GitHub Container Registry:
+
+```text
+ghcr.io/fvcunhaa/obsstore-api
+ghcr.io/fvcunhaa/obsstore-payment
+ghcr.io/fvcunhaa/obsstore-shipping
+ghcr.io/fvcunhaa/obsstore-simulator
+```
+
+Na branch `feature/obsstore-v2`, a tag utilizada é:
+
+```text
+obsstore-v2
+```
+
+No servidor não é necessário build local. Use:
+
+```bash
+git fetch origin
+git checkout feature/obsstore-v2
+git pull origin feature/obsstore-v2
+
+cp .env.example .env
+
+docker compose -f docker-compose.deploy.yaml pull
+docker compose -f docker-compose.deploy.yaml up -d
+```
+
+Para atualizar uma instalação já existente:
+
+```bash
+git pull origin feature/obsstore-v2
+docker compose -f docker-compose.deploy.yaml pull
+docker compose -f docker-compose.deploy.yaml up -d
+```
+
+Validar:
+
+```bash
+docker compose -f docker-compose.deploy.yaml ps
+docker compose -f docker-compose.deploy.yaml logs -f
+```
+
+Quando a branch for integrada ao `main`, o workflow passa a publicar também a tag `latest`.
