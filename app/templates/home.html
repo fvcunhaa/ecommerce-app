@@ -220,6 +220,46 @@
   </aside>
   <div class="drawer-backdrop" id="drawerBackdrop"></div>
 
+  <div class="checkout-modal" id="checkoutModal" aria-hidden="true">
+    <div class="checkout-card">
+      <div class="checkout-card__header">
+        <div>
+          <small>CHECKOUT SEGURO</small>
+          <h2>Finalizar pedido</h2>
+        </div>
+        <button id="checkoutClose" type="button" aria-label="Fechar checkout">×</button>
+      </div>
+      <form id="checkoutForm">
+        <div class="checkout-grid">
+          <label>Nome completo<input name="name" required placeholder="Cliente ObsStore"></label>
+          <label>E-mail<input name="email" type="email" required placeholder="cliente@obsstore.lab"></label>
+          <label>Estado
+            <select name="state" required>
+              <option value="SP">SP</option><option value="RJ">RJ</option><option value="MG">MG</option>
+              <option value="PR">PR</option><option value="RS">RS</option><option value="SC">SC</option>
+              <option value="BA">BA</option><option value="GO">GO</option><option value="PE">PE</option>
+              <option value="CE">CE</option><option value="ES">ES</option>
+            </select>
+          </label>
+          <label>Pagamento
+            <select name="payment_method" required>
+              <option value="pix">PIX (3% de desconto)</option>
+              <option value="credito">Cartão de crédito</option>
+              <option value="debito">Cartão de débito</option>
+            </select>
+          </label>
+        </div>
+        <div class="checkout-review">
+          <span>Total estimado</span>
+          <strong id="checkoutTotal">R$ 0,00</strong>
+        </div>
+        <button class="checkout-submit" type="submit">Confirmar compra</button>
+        <div class="checkout-result" id="checkoutResult" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+  </div>
+  <div class="checkout-backdrop" id="checkoutBackdrop"></div>
+
   <div class="toast" id="toast" role="status" aria-live="polite">Produto adicionado ao carrinho.</div>
 
   <footer class="footer">
