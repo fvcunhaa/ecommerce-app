@@ -16,8 +16,15 @@ services:
       OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+      PAYMENT_SERVICE_URL: http://payment-service:5001
+      SHIPPING_SERVICE_URL: http://shipping-service:5002
+      SERVICE_TIMEOUT_SECONDS: ${SERVICE_TIMEOUT_SECONDS:-5}
     depends_on:
       postgres:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      shipping-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/status')\""]
@@ -46,6 +53,51 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ./services/payment
+    container_name: ecommerce_payment
+    environment:
+      PAYMENT_GATEWAY_MIN_MS: ${PAYMENT_GATEWAY_MIN_MS:-80}
+      PAYMENT_GATEWAY_MAX_MS: ${PAYMENT_GATEWAY_MAX_MS:-260}
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0.03}
+      OTEL_SERVICE_NAME: obsstore-payment
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=obsstore,deployment.environment=lab}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  shipping-service:
+    build:
+      context: ./services/shipping
+    container_name: ecommerce_shipping
+    environment:
+      SHIPPING_MIN_MS: ${SHIPPING_MIN_MS:-40}
+      SHIPPING_MAX_MS: ${SHIPPING_MAX_MS:-140}
+      OTEL_SERVICE_NAME: obsstore-shipping
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=obsstore,deployment.environment=lab}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5002/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   simulator:
