@@ -364,6 +364,103 @@ def inicializar_banco():
                 ON CONFLICT (id) DO NOTHING;
             """)
 
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS store_products (
+                    id VARCHAR(80) PRIMARY KEY,
+                    name VARCHAR(160) NOT NULL,
+                    category VARCHAR(80) NOT NULL,
+                    price NUMERIC(12,2) NOT NULL,
+                    old_price NUMERIC(12,2),
+                    description TEXT,
+                    badge VARCHAR(80),
+                    visual VARCHAR(40),
+                    active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inventory (
+                    product_id VARCHAR(80) PRIMARY KEY REFERENCES store_products(id),
+                    quantity INTEGER NOT NULL DEFAULT 0,
+                    reserved INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS customers (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(160) NOT NULL,
+                    email VARCHAR(200) UNIQUE NOT NULL,
+                    state VARCHAR(2) NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    id BIGSERIAL PRIMARY KEY,
+                    customer_id BIGINT REFERENCES customers(id),
+                    status VARCHAR(30) NOT NULL DEFAULT 'paid',
+                    payment_method VARCHAR(30) NOT NULL,
+                    subtotal NUMERIC(12,2) NOT NULL,
+                    shipping NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    discount NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    total NUMERIC(12,2) NOT NULL,
+                    source VARCHAR(30) NOT NULL DEFAULT 'store',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS order_items (
+                    id BIGSERIAL PRIMARY KEY,
+                    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+                    product_id VARCHAR(80) NOT NULL REFERENCES store_products(id),
+                    quantity INTEGER NOT NULL,
+                    unit_price NUMERIC(12,2) NOT NULL,
+                    total NUMERIC(12,2) NOT NULL
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    id BIGSERIAL PRIMARY KEY,
+                    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+                    method VARCHAR(30) NOT NULL,
+                    status VARCHAR(30) NOT NULL,
+                    amount NUMERIC(12,2) NOT NULL,
+                    transaction_id VARCHAR(80) NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            for product in STORE_PRODUCTS:
+                cur.execute("""
+                    INSERT INTO store_products (
+                        id, name, category, price, old_price, description, badge, visual
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        category = EXCLUDED.category,
+                        price = EXCLUDED.price,
+                        old_price = EXCLUDED.old_price,
+                        description = EXCLUDED.description,
+                        badge = EXCLUDED.badge,
+                        visual = EXCLUDED.visual,
+                        active = TRUE;
+                """, (
+                    product["id"], product["name"], product["category"], product["price"],
+                    product["old_price"], product["description"], product["badge"], product["visual"]
+                ))
+                cur.execute("""
+                    INSERT INTO inventory (product_id, quantity)
+                    VALUES (%s, %s)
+                    ON CONFLICT (product_id) DO NOTHING;
+                """, (product["id"], randint(80, 240)))
+
         conn.commit()
 
 
@@ -512,6 +609,158 @@ def sortear_com_peso(dicionario):
 def invalidar_snapshot():
     SNAPSHOT["metricas"] = None
     SNAPSHOT["endpoints"] = None
+
+
+def obter_store_products():
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT p.id, p.name, p.category, p.price, p.old_price, p.description,
+                       p.badge, p.visual, i.quantity, i.reserved
+                FROM store_products p
+                JOIN inventory i ON i.product_id = p.id
+                WHERE p.active = TRUE
+                ORDER BY p.name;
+            """)
+            rows = cur.fetchall()
+    return [{
+        **dict(row),
+        "price": float(row["price"]),
+        "old_price": float(row["old_price"]) if row["old_price"] is not None else None
+    } for row in rows]
+
+
+def registrar_pedido_store(customer, items, payment_method="pix", source="store"):
+    if not items:
+        raise ValueError("Carrinho vazio")
+
+    state = (customer.get("state") or "SP").upper()[:2]
+    email = (customer.get("email") or f"guest-{int(time.time()*1000)}@obsstore.lab").lower()
+    name = customer.get("name") or "Cliente ObsStore"
+
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                INSERT INTO customers (name, email, state)
+                VALUES (%s,%s,%s)
+                ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, state = EXCLUDED.state
+                RETURNING id;
+            """, (name, email, state))
+            customer_id = cur.fetchone()["id"]
+
+            normalized = []
+            subtotal = 0.0
+            for item in items:
+                product_id = item.get("product_id")
+                quantity = max(1, min(int(item.get("quantity", 1)), 5))
+                cur.execute("""
+                    SELECT p.id, p.name, p.price, i.quantity, i.reserved
+                    FROM store_products p
+                    JOIN inventory i ON i.product_id = p.id
+                    WHERE p.id = %s AND p.active = TRUE
+                    FOR UPDATE;
+                """, (product_id,))
+                product = cur.fetchone()
+                if not product:
+                    raise ValueError(f"Produto inválido: {product_id}")
+                available = product["quantity"] - product["reserved"]
+                if available < quantity:
+                    raise ValueError(f"Estoque insuficiente para {product['name']}")
+                unit_price = float(product["price"])
+                line_total = round(unit_price * quantity, 2)
+                subtotal += line_total
+                normalized.append((product, quantity, unit_price, line_total))
+
+            shipping = 0.0 if subtotal >= 299 else 24.90
+            discount = round(subtotal * 0.03, 2) if payment_method == "pix" else 0.0
+            total = round(subtotal + shipping - discount, 2)
+
+            cur.execute("""
+                INSERT INTO orders (
+                    customer_id, status, payment_method, subtotal, shipping, discount, total, source
+                )
+                VALUES (%s,'paid',%s,%s,%s,%s,%s,%s)
+                RETURNING id, created_at;
+            """, (customer_id, payment_method, subtotal, shipping, discount, total, source))
+            order = cur.fetchone()
+
+            for product, quantity, unit_price, line_total in normalized:
+                cur.execute("""
+                    INSERT INTO order_items (order_id, product_id, quantity, unit_price, total)
+                    VALUES (%s,%s,%s,%s,%s);
+                """, (order["id"], product["id"], quantity, unit_price, line_total))
+                cur.execute("""
+                    UPDATE inventory
+                    SET quantity = quantity - %s, updated_at = NOW()
+                    WHERE product_id = %s;
+                """, (quantity, product["id"]))
+
+            transaction_id = f"OBS-{order['id']}-{int(time.time())}"
+            cur.execute("""
+                INSERT INTO payments (order_id, method, status, amount, transaction_id)
+                VALUES (%s,%s,'approved',%s,%s);
+            """, (order["id"], payment_method, total, transaction_id))
+
+        conn.commit()
+
+    main_product = normalized[0][0]["name"]
+    legacy = {
+        "id": 1000000 + int(order["id"]),
+        "estado": state,
+        "produto": main_product,
+        "forma_pagamento": payment_method,
+        "quantidade": sum(line[1] for line in normalized),
+        "preco_unitario": normalized[0][2],
+        "subtotal": round(subtotal, 2),
+        "desconto_percentual": round((discount / subtotal) if subtotal else 0, 4),
+        "valor_desconto": discount,
+        "frete": shipping,
+        "total": total,
+        "data": order["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+    }
+    salvar_venda_db(legacy)
+    SIMULADOR["vendas"].append(legacy)
+    SIMULADOR["carrinhos_criados"] += 1
+    SIMULADOR["ultima_atualizacao"] = agora()
+    salvar_estado_simulador()
+    invalidar_snapshot()
+
+    return {
+        "order_id": int(order["id"]),
+        "transaction_id": transaction_id,
+        "status": "paid",
+        "total": total,
+        "subtotal": round(subtotal, 2),
+        "shipping": shipping,
+        "discount": discount,
+        "payment_method": payment_method,
+        "customer": {"name": name, "email": email, "state": state}
+    }
+
+
+def obter_resumo_store():
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(total),0) AS revenue_today,
+                    COUNT(*) AS orders_today,
+                    COALESCE(AVG(total),0) AS average_ticket
+                FROM orders
+                WHERE created_at >= CURRENT_DATE;
+            """)
+            today = cur.fetchone()
+            cur.execute("SELECT COUNT(*) AS customers FROM customers;")
+            customers = cur.fetchone()["customers"]
+            cur.execute("SELECT COALESCE(SUM(quantity),0) AS stock FROM inventory;")
+            stock = cur.fetchone()["stock"]
+    return {
+        "revenue_today": float(today["revenue_today"]),
+        "orders_today": int(today["orders_today"]),
+        "average_ticket": round(float(today["average_ticket"]), 2),
+        "customers": int(customers),
+        "stock_units": int(stock)
+    }
 
 
 # ============================================================
@@ -1016,6 +1265,34 @@ def index():
 @app.route("/admin")
 def admin():
     return render_template("index.html")
+
+
+@app.route("/api/store/products")
+def api_store_products():
+    return jsonify({"products": obter_store_products()})
+
+
+@app.route("/api/store/summary")
+def api_store_summary():
+    return jsonify(obter_resumo_store())
+
+
+@app.route("/api/store/checkout", methods=["POST"])
+def api_store_checkout():
+    payload = request.get_json(silent=True) or {}
+    try:
+        order = registrar_pedido_store(
+            customer=payload.get("customer") or {},
+            items=payload.get("items") or [],
+            payment_method=payload.get("payment_method") or "pix",
+            source=payload.get("source") or "store"
+        )
+        return jsonify({"status": 1, "order": order}), 201
+    except ValueError as error:
+        return jsonify({"status": 0, "message": str(error)}), 400
+    except Exception as error:
+        app.logger.exception("Falha ao processar checkout")
+        return jsonify({"status": 0, "message": "Falha interna no checkout"}), 500
 
 
 # ============================================================
