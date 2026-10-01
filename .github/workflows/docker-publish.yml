@@ -1,9 +1,10 @@
-name: Build and Publish Docker Image
+name: Build and Publish ObsStore Images
 
 on:
   push:
     branches:
       - main
+      - feature/obsstore-v2
   workflow_dispatch:
 
 permissions:
@@ -12,17 +13,33 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: fvcunhaa/ecommerce-app
+  OWNER: fvcunhaa
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: obsstore-api
+            context: .
+            dockerfile: ./Dockerfile
+          - name: obsstore-payment
+            context: ./services/payment
+            dockerfile: ./services/payment/Dockerfile
+          - name: obsstore-shipping
+            context: ./services/shipping
+            dockerfile: ./services/shipping/Dockerfile
+          - name: obsstore-simulator
+            context: ./simulator
+            dockerfile: ./simulator/Dockerfile
 
     steps:
-      - name: Checkout do código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login no GitHub Container Registry
+      - name: Login no GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -32,11 +49,25 @@ jobs:
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build e Push da imagem
+      - name: Definir tag do ambiente
+        id: vars
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "channel=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=obsstore-v2" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build e Push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
+          platforms: linux/amd64
           tags: |
-            ghcr.io/fvcunhaa/ecommerce-app:latest
-            ghcr.io/fvcunhaa/ecommerce-app:${{ github.sha }}
+            ghcr.io/${{ env.OWNER }}/${{ matrix.name }}:${{ steps.vars.outputs.channel }}
+            ghcr.io/${{ env.OWNER }}/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
