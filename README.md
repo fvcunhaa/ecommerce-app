@@ -258,7 +258,7 @@ Quantidade média de novas jornadas por minuto.
 
 ### PAYMENT_FAILURE_RATE
 
-Probabilidade de uma jornada chegar a uma falha proposital de pagamento.
+Probabilidade do Payment Service rejeitar uma autorização. O simulador não decide a falha; ele apenas executa a compra.
 
 ### CART_RATE
 
@@ -461,3 +461,26 @@ Esse é o objetivo central do ObsStore.
 Um ecommerce completo projetado para ensinar e demonstrar observabilidade.
 
 Não é apenas um aplicativo que gera métricas. É um ambiente no qual negócio, infraestrutura, aplicações e experiência do usuário podem ser observados como partes da mesma operação.
+
+
+## Arquitetura distribuída atual
+
+```text
+ecommerce_simulator
+        |
+        | HTTP
+        v
+    obsstore-api
+        |
+        +----> shipping-service
+        |
+        +----> payment-service
+        |
+        +----> PostgreSQL
+```
+
+Os serviços `obsstore-api`, `obsstore-payment` e `obsstore-shipping` são iniciados com `opentelemetry-instrument`.
+
+O simulador não gera traces, não define latências e não fabrica falhas de aplicação. Ele apenas produz jornadas. Latência e rejeição de pagamento pertencem ao comportamento do `payment-service`; cálculo de frete pertence ao `shipping-service`; persistência pertence à API e ao PostgreSQL.
+
+Quando o receiver OTLP do Zabbix Proxy 8 estiver disponível, todos os serviços poderão usar o mesmo destino através das variáveis `OTEL_EXPORTER_OTLP_*`.
