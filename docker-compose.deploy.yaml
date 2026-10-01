@@ -1,0 +1,115 @@
+services:
+  web:
+    image: ghcr.io/fvcunhaa/obsstore-api:obsstore-v2
+    container_name: ecommerce_app
+    ports:
+      - "80:5000"
+    env_file:
+      - .env
+    environment:
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-obsstore-api}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=obsstore,deployment.environment=lab}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+      PAYMENT_SERVICE_URL: http://payment-service:5001
+      SHIPPING_SERVICE_URL: http://shipping-service:5002
+      SERVICE_TIMEOUT_SECONDS: ${SERVICE_TIMEOUT_SECONDS:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      shipping-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/status')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: ecommerce_postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  payment-service:
+    image: ghcr.io/fvcunhaa/obsstore-payment:obsstore-v2
+    container_name: ecommerce_payment
+    environment:
+      PAYMENT_GATEWAY_MIN_MS: ${PAYMENT_GATEWAY_MIN_MS:-80}
+      PAYMENT_GATEWAY_MAX_MS: ${PAYMENT_GATEWAY_MAX_MS:-260}
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0.03}
+      OTEL_SERVICE_NAME: obsstore-payment
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=obsstore,deployment.environment=lab}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  shipping-service:
+    image: ghcr.io/fvcunhaa/obsstore-shipping:obsstore-v2
+    container_name: ecommerce_shipping
+    environment:
+      SHIPPING_MIN_MS: ${SHIPPING_MIN_MS:-40}
+      SHIPPING_MAX_MS: ${SHIPPING_MAX_MS:-140}
+      OTEL_SERVICE_NAME: obsstore-shipping
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=obsstore,deployment.environment=lab}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5002/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  simulator:
+    image: ghcr.io/fvcunhaa/obsstore-simulator:obsstore-v2
+    container_name: ecommerce_simulator
+    environment:
+      OBSSTORE_URL: http://web:5000
+      TARGET_REVENUE_DAILY: ${TARGET_REVENUE_DAILY:-100000}
+      VISITS_PER_MINUTE: ${VISITS_PER_MINUTE:-8}
+      CART_RATE: ${CART_RATE:-0.42}
+      BASE_CONVERSION_RATE: ${BASE_CONVERSION_RATE:-0.012}
+      TZ: America/Sao_Paulo
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
