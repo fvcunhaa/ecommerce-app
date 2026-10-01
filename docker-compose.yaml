@@ -8,6 +8,14 @@ services:
       - ./app:/home/app
     env_file:
       - .env
+    environment:
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-obsstore-api}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=obsstore,deployment.environment=lab}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
     depends_on:
       postgres:
         condition: service_healthy
