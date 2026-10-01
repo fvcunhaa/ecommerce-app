@@ -15,6 +15,13 @@
   const cartCount = document.getElementById("cartCount");
   const cartTotal = document.getElementById("cartTotal");
   const toast = document.getElementById("toast");
+  const checkoutButton = document.getElementById("checkoutButton");
+  const checkoutModal = document.getElementById("checkoutModal");
+  const checkoutBackdrop = document.getElementById("checkoutBackdrop");
+  const checkoutClose = document.getElementById("checkoutClose");
+  const checkoutForm = document.getElementById("checkoutForm");
+  const checkoutTotal = document.getElementById("checkoutTotal");
+  const checkoutResult = document.getElementById("checkoutResult");
   const favorites = document.querySelectorAll(".favorite");
 
   let category = "Todos";
@@ -96,6 +103,8 @@
 
     cartCount.textContent = cart.length;
     cartTotal.textContent = money(total);
+    checkoutTotal.textContent = money(total);
+    checkoutButton.disabled = cart.length === 0;
   }
 
   function showToast(message) {
@@ -108,7 +117,8 @@
   document.querySelectorAll(".add-cart").forEach(button => {
     button.addEventListener("click", async () => {
       button.classList.add("loading");
-      const product = { name: button.dataset.product, price: Number(button.dataset.price) };
+      const card = button.closest(".product-card");
+      const product = { id: card.dataset.productId, name: button.dataset.product, price: Number(button.dataset.price) };
       try {
         const response = await fetch("/carrinho/adicionar");
         if (!response.ok) throw new Error("Falha ao registrar carrinho");
@@ -127,6 +137,69 @@
         showToast("Não foi possível adicionar o produto.");
       }
     });
+  });
+
+  function openCheckout() {
+    if (!cart.length) return;
+    closeCart();
+    checkoutModal.classList.add("open");
+    checkoutBackdrop.classList.add("open");
+    checkoutModal.setAttribute("aria-hidden", "false");
+    checkoutResult.textContent = "";
+  }
+
+  function closeCheckout() {
+    checkoutModal.classList.remove("open");
+    checkoutBackdrop.classList.remove("open");
+    checkoutModal.setAttribute("aria-hidden", "true");
+  }
+
+  checkoutButton.addEventListener("click", openCheckout);
+  checkoutClose.addEventListener("click", closeCheckout);
+  checkoutBackdrop.addEventListener("click", closeCheckout);
+
+  checkoutForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = checkoutForm.querySelector(".checkout-submit");
+    submit.disabled = true;
+    checkoutResult.textContent = "Processando pedido...";
+
+    const data = new FormData(checkoutForm);
+    const grouped = new Map();
+    cart.forEach(item => {
+      const current = grouped.get(item.name) || { product_id: item.id, quantity: 0 };
+      current.quantity += 1;
+      grouped.set(item.name, current);
+    });
+
+    try {
+      const response = await fetch("/api/store/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer: {
+            name: data.get("name"),
+            email: data.get("email"),
+            state: data.get("state")
+          },
+          payment_method: data.get("payment_method"),
+          source: "store",
+          items: [...grouped.values()]
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || "Falha no checkout");
+
+      checkoutResult.innerHTML = `<strong>Pedido #${payload.order.order_id} confirmado!</strong><br>Total: ${money(payload.order.total)} · Transação ${payload.order.transaction_id}`;
+      cart = [];
+      renderCart();
+      checkoutForm.reset();
+      showToast("Compra confirmada com sucesso.");
+    } catch (error) {
+      checkoutResult.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
   });
 
   favorites.forEach(button => {
