@@ -83,6 +83,90 @@ PRODUTOS = {
 }
 
 
+STORE_PRODUCTS = [
+    {
+        "id": "notebook-pro-x15",
+        "name": "Notebook Pro X15",
+        "category": "Notebooks",
+        "price": 6499.90,
+        "old_price": 7199.90,
+        "badge": "Mais vendido",
+        "description": "Performance profissional, tela de alta definição e autonomia para o dia inteiro.",
+        "visual": "notebook"
+    },
+    {
+        "id": "monitor-ultraview-32",
+        "name": "Monitor UltraView 32”",
+        "category": "Monitores",
+        "price": 2399.90,
+        "old_price": 2799.90,
+        "badge": "Oferta",
+        "description": "Painel imersivo 4K para produtividade, criação e entretenimento.",
+        "visual": "monitor"
+    },
+    {
+        "id": "smartphone-nova-x",
+        "name": "Smartphone Nova X",
+        "category": "Smartphones",
+        "price": 4299.90,
+        "old_price": 4799.90,
+        "badge": "Lançamento",
+        "description": "Câmera avançada, alto desempenho e design premium em um só dispositivo.",
+        "visual": "phone"
+    },
+    {
+        "id": "headset-pulse-pro",
+        "name": "Headset Pulse Pro",
+        "category": "Áudio",
+        "price": 899.90,
+        "old_price": 1099.90,
+        "badge": "Destaque",
+        "description": "Áudio espacial, cancelamento de ruído e conforto para longas sessões.",
+        "visual": "headset"
+    },
+    {
+        "id": "mouse-precision",
+        "name": "Mouse Precision",
+        "category": "Acessórios",
+        "price": 329.90,
+        "old_price": 399.90,
+        "badge": "20% OFF",
+        "description": "Precisão, ergonomia e conectividade para sua rotina de trabalho.",
+        "visual": "mouse"
+    },
+    {
+        "id": "keyboard-mechanical",
+        "name": "Keyboard Mechanical",
+        "category": "Gaming",
+        "price": 599.90,
+        "old_price": 699.90,
+        "badge": "Gaming",
+        "description": "Switches mecânicos, iluminação ajustável e construção robusta.",
+        "visual": "keyboard"
+    },
+    {
+        "id": "ssd-nvme-2tb",
+        "name": "SSD NVMe 2TB",
+        "category": "Componentes",
+        "price": 749.90,
+        "old_price": 899.90,
+        "badge": "Alta performance",
+        "description": "Armazenamento ultrarrápido para aplicações, jogos e grandes projetos.",
+        "visual": "ssd"
+    },
+    {
+        "id": "smart-tv-vision-55",
+        "name": "Smart TV Vision 55”",
+        "category": "Casa",
+        "price": 3499.90,
+        "old_price": 3999.90,
+        "badge": "Oferta",
+        "description": "Imagem 4K, streaming integrado e experiência imersiva para sua casa.",
+        "visual": "tv"
+    }
+]
+
+
 FORMAS_PAGAMENTO = {
     "credito": 0.52,
     "pix": 0.35,
@@ -926,6 +1010,11 @@ def obter_endpoint_do_snapshot(caminho):
 
 @app.route("/")
 def index():
+    return render_template("home.html", products=STORE_PRODUCTS)
+
+
+@app.route("/admin")
+def admin():
     return render_template("index.html")
 
 
