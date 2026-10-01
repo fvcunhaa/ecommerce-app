@@ -8,7 +8,6 @@ import requests
 BASE_URL = os.getenv("OBSSTORE_URL", "http://web:5000").rstrip("/")
 TARGET_REVENUE_DAILY = float(os.getenv("TARGET_REVENUE_DAILY", "100000"))
 VISITS_PER_MINUTE = max(float(os.getenv("VISITS_PER_MINUTE", "8")), 0.2)
-PAYMENT_FAILURE_RATE = float(os.getenv("PAYMENT_FAILURE_RATE", "0.03"))
 CART_RATE = float(os.getenv("CART_RATE", "0.42"))
 BASE_CONVERSION_RATE = float(os.getenv("BASE_CONVERSION_RATE", "0.012"))
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "8"))
@@ -112,19 +111,6 @@ def complete_purchase(products, deficit):
 
     payment = random.choices(PAYMENTS, weights=PAYMENT_WEIGHTS, k=1)[0]
 
-    # Falha de pagamento proposital: gera erro técnico e abandono.
-    if random.random() < PAYMENT_FAILURE_RATE:
-        try:
-            requests.get(f"{BASE_URL}/pagamento/boleto", timeout=REQUEST_TIMEOUT)
-        except requests.RequestException:
-            pass
-        print("[simulator] pagamento recusado/indisponível; jornada abandonada.")
-        return False
-
-    payment_endpoint = "pix" if payment == "pix" else "cartao"
-    response = requests.get(f"{BASE_URL}/pagamento/{payment_endpoint}", timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-
     basket = choose_basket(products, deficit)
     if not basket:
         return False
@@ -145,7 +131,14 @@ def complete_purchase(products, deficit):
         json=payload,
         timeout=REQUEST_TIMEOUT,
     )
-    checkout.raise_for_status()
+    if checkout.status_code >= 400:
+        try:
+            reason = checkout.json().get("message", "checkout_rejected")
+        except ValueError:
+            reason = "checkout_rejected"
+        print(f"[simulator] checkout não concluído: {reason}")
+        return False
+
     order = checkout.json()["order"]
     print(
         f"[simulator] pedido #{order['order_id']} | "
