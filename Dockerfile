@@ -15,4 +15,4 @@ ENV FLASK_RUN_PORT=5000
 
 EXPOSE 5000
 
-CMD ["python", "-m", "app.main"]
+CMD ["opentelemetry-instrument", "python", "-m", "app.main"]
