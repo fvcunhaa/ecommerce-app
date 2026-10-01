@@ -127,7 +127,7 @@
 
       <div class="product-grid" id="productGrid">
         {% for product in products %}
-        <article class="product-card" data-name="{{ product.name|lower }}" data-category="{{ product.category }}">
+        <article class="product-card" data-product-id="{{ product.id }}" data-name="{{ product.name|lower }}" data-category="{{ product.category }}">
           <div class="product-card__media product-visual product-visual--{{ product.visual }}">
             <span class="product-badge">{{ product.badge }}</span>
             <button class="favorite" type="button" aria-label="Adicionar {{ product.name }} aos favoritos">♡</button>
