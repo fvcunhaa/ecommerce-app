@@ -1,6 +1,7 @@
 import os
 import time
 import psycopg2
+import requests
 
 from flask import Flask, jsonify, render_template, request
 from random import randint, uniform, choices
@@ -18,6 +19,10 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://ecommerce:ecommerce123@postgres:5432/ecommerce"
 )
+
+PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:5001").rstrip("/")
+SHIPPING_SERVICE_URL = os.getenv("SHIPPING_SERVICE_URL", "http://shipping-service:5002").rstrip("/")
+SERVICE_TIMEOUT_SECONDS = float(os.getenv("SERVICE_TIMEOUT_SECONDS", "5"))
 
 
 # ============================================================
@@ -671,9 +676,42 @@ def registrar_pedido_store(customer, items, payment_method="pix", source="store"
                 subtotal += line_total
                 normalized.append((product, quantity, unit_price, line_total))
 
-            shipping = 0.0 if subtotal >= 299 else 24.90
+            try:
+                shipping_response = requests.post(
+                    f"{SHIPPING_SERVICE_URL}/quote",
+                    json={"subtotal": round(subtotal, 2), "state": state},
+                    timeout=SERVICE_TIMEOUT_SECONDS,
+                )
+                shipping_response.raise_for_status()
+                shipping_data = shipping_response.json()
+                shipping = float(shipping_data["shipping"])
+            except (requests.RequestException, KeyError, ValueError) as error:
+                app.logger.exception("shipping service unavailable")
+                raise RuntimeError("Serviço de frete indisponível") from error
+
             discount = round(subtotal * 0.03, 2) if payment_method == "pix" else 0.0
             total = round(subtotal + shipping - discount, 2)
+
+            try:
+                payment_response = requests.post(
+                    f"{PAYMENT_SERVICE_URL}/authorize",
+                    json={
+                        "amount": total,
+                        "method": payment_method,
+                        "customer_email": email,
+                    },
+                    timeout=SERVICE_TIMEOUT_SECONDS,
+                )
+                payment_data = payment_response.json()
+            except (requests.RequestException, ValueError) as error:
+                app.logger.exception("payment service unavailable")
+                raise RuntimeError("Serviço de pagamento indisponível") from error
+
+            if payment_response.status_code >= 400 or payment_data.get("status") != "approved":
+                reason = payment_data.get("reason", "payment_rejected")
+                raise ValueError(f"Pagamento não aprovado: {reason}")
+
+            transaction_id = payment_data["transaction_id"]
 
             cur.execute("""
                 INSERT INTO orders (
@@ -695,7 +733,6 @@ def registrar_pedido_store(customer, items, payment_method="pix", source="store"
                     WHERE product_id = %s;
                 """, (quantity, product["id"]))
 
-            transaction_id = f"OBS-{order['id']}-{int(time.time())}"
             cur.execute("""
                 INSERT INTO payments (order_id, method, status, amount, transaction_id)
                 VALUES (%s,%s,'approved',%s,%s);
@@ -1221,6 +1258,8 @@ def api_store_checkout():
         return jsonify({"status": 1, "order": order}), 201
     except ValueError as error:
         return jsonify({"status": 0, "message": str(error)}), 400
+    except RuntimeError as error:
+        return jsonify({"status": 0, "message": str(error)}), 503
     except Exception as error:
         app.logger.exception("Falha ao processar checkout")
         return jsonify({"status": 0, "message": "Falha interna no checkout"}), 500
