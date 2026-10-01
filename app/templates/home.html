@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ObsStore — Ecommerce Observability Lab">
+  <title>ObsStore | Tecnologia que você sente. Performance que você observa.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='obsstore.css') }}">
+</head>
+<body>
+  <div class="top-strip">
+    <div class="shell top-strip__content">
+      <span>Frete grátis em pedidos acima de R$ 299</span>
+      <span class="top-strip__divider"></span>
+      <span>Compra segura</span>
+      <span class="top-strip__divider"></span>
+      <span>Suporte especializado</span>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="shell header-row">
+      <a class="brand" href="/" aria-label="ObsStore, página inicial">
+        <span class="brand-mark">
+          <span></span><span></span><span></span>
+        </span>
+        <span class="brand-copy">
+          <strong>OBS<span>STORE</span></strong>
+          <small>ECOMMERCE OBSERVABILITY LAB</small>
+        </span>
+      </a>
+
+      <form class="search" id="searchForm" role="search">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.3-4.3m1.3-5.2A6.5 6.5 0 1 1 5 11.5a6.5 6.5 0 0 1 13 0Z"/></svg>
+        <input id="searchInput" type="search" placeholder="O que você está procurando?" autocomplete="off">
+        <button type="submit">Buscar</button>
+      </form>
+
+      <nav class="header-actions" aria-label="Ações">
+        <button class="icon-action" type="button" aria-label="Minha conta">
+          <span class="icon-action__icon">◎</span>
+          <span><small>Olá, visitante</small><strong>Minha conta</strong></span>
+        </button>
+        <button class="icon-action cart-trigger" id="cartTrigger" type="button" aria-label="Abrir carrinho">
+          <span class="icon-action__icon">◫</span>
+          <span><small>Seu carrinho</small><strong><span id="cartCount">0</span> itens</strong></span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="category-bar">
+      <div class="shell category-bar__content">
+        <button class="category-pill active" type="button" data-category="Todos">Todos</button>
+        <button class="category-pill" type="button" data-category="Notebooks">Notebooks</button>
+        <button class="category-pill" type="button" data-category="Smartphones">Smartphones</button>
+        <button class="category-pill" type="button" data-category="Monitores">Monitores</button>
+        <button class="category-pill" type="button" data-category="Gaming">Gaming</button>
+        <button class="category-pill" type="button" data-category="Áudio">Áudio</button>
+        <button class="category-pill" type="button" data-category="Acessórios">Acessórios</button>
+        <a class="category-link" href="#offers">Ofertas</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">TECNOLOGIA • PERFORMANCE • EXPERIÊNCIA</span>
+          <h1>Tecnologia que você sente.<br><em>Performance que você observa.</em></h1>
+          <p>Uma experiência de compra premium, criada para demonstrar como negócio, aplicação e observabilidade se conectam em tempo real.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#products">Explorar produtos</a>
+            <a class="btn btn-secondary" href="/admin">Ver operação em tempo real</a>
+          </div>
+          <div class="hero-proof">
+            <div><strong>+12 mil</strong><span>sessões simuladas/dia</span></div>
+            <div><strong>24/7</strong><span>experiência monitorada</span></div>
+            <div><strong>100%</strong><span>ambiente de laboratório</span></div>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="hero-glow"></div>
+          <div class="device-stage">
+            <div class="device-laptop">
+              <div class="device-laptop__screen">
+                <div class="mini-dashboard">
+                  <span class="mini-logo">OBS</span>
+                  <div class="mini-chart">
+                    <i></i><i></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <div class="mini-cards"><b></b><b></b><b></b></div>
+                </div>
+              </div>
+              <div class="device-laptop__base"></div>
+            </div>
+            <div class="device-phone"><span></span><div class="device-phone__screen"></div></div>
+            <div class="signal-chip">APM <b>LIVE</b></div>
+            <div class="signal-chip signal-chip--alt">OTel <b>READY</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="trust-band">
+      <div class="shell trust-grid">
+        <article><span class="trust-icon">✓</span><div><strong>Compra segura</strong><small>Ambiente protegido e rastreável</small></div></article>
+        <article><span class="trust-icon">↗</span><div><strong>Entrega rápida</strong><small>Simulação logística em tempo real</small></div></article>
+        <article><span class="trust-icon">24</span><div><strong>Suporte 24x7</strong><small>Experiência desenhada para disponibilidade</small></div></article>
+        <article><span class="trust-icon">◎</span><div><strong>Observabilidade ponta a ponta</strong><small>Do clique ao pedido confirmado</small></div></article>
+      </div>
+    </section>
+
+    <section class="section shell" id="products">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow eyebrow--dark">SELEÇÃO OBSSTORE</span>
+          <h2>Produtos em destaque</h2>
+          <p>Curadoria de tecnologia para produtividade, entretenimento e performance.</p>
+        </div>
+        <div class="result-count"><span id="visibleCount">{{ products|length }}</span> produtos encontrados</div>
+      </div>
+
+      <div class="product-grid" id="productGrid">
+        {% for product in products %}
+        <article class="product-card" data-name="{{ product.name|lower }}" data-category="{{ product.category }}">
+          <div class="product-card__media product-visual product-visual--{{ product.visual }}">
+            <span class="product-badge">{{ product.badge }}</span>
+            <button class="favorite" type="button" aria-label="Adicionar {{ product.name }} aos favoritos">♡</button>
+            <div class="visual-object">
+              <span class="shape shape-1"></span>
+              <span class="shape shape-2"></span>
+              <span class="shape shape-3"></span>
+            </div>
+          </div>
+          <div class="product-card__content">
+            <span class="product-category">{{ product.category }}</span>
+            <h3>{{ product.name }}</h3>
+            <p>{{ product.description }}</p>
+            <div class="rating" aria-label="Avaliação 4,9 de 5"><span>★★★★★</span><small>4,9</small></div>
+            <div class="price-block">
+              <small>de R$ {{ "%.2f"|format(product.old_price)|replace(".", ",") }}</small>
+              <strong>R$ {{ "%.2f"|format(product.price)|replace(".", ",") }}</strong>
+              <span>ou 10x sem juros</span>
+            </div>
+            <button class="add-cart" type="button" data-product="{{ product.name }}" data-price="{{ product.price }}">
+              Adicionar ao carrinho
+            </button>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+
+      <div class="empty-state" id="emptyState" hidden>
+        <strong>Nenhum produto encontrado</strong>
+        <p>Tente outro termo ou selecione uma categoria diferente.</p>
+      </div>
+    </section>
+
+    <section class="campaign shell" id="offers">
+      <div class="campaign-copy">
+        <span class="eyebrow">OBSSTORE PRIME</span>
+        <h2>Performance para todos os momentos.</h2>
+        <p>Ofertas pensadas para quem exige mais de cada experiência digital.</p>
+        <a href="#products" class="btn btn-light">Ver ofertas</a>
+      </div>
+      <div class="campaign-art" aria-hidden="true">
+        <span class="orbit orbit-1"></span>
+        <span class="orbit orbit-2"></span>
+        <span class="orbit orbit-3"></span>
+        <span class="campaign-core">OBS</span>
+      </div>
+    </section>
+
+    <section class="section shell experience">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow eyebrow--dark">POR TRÁS DA EXPERIÊNCIA</span>
+          <h2>Uma loja criada para ser observada.</h2>
+          <p>Cada jornada gera sinais que depois serão correlacionados no Zabbix 8.</p>
+        </div>
+      </div>
+      <div class="experience-grid">
+        <article>
+          <span>01</span>
+          <h3>Experiência real</h3>
+          <p>Navegação, catálogo, carrinho, checkout e pagamentos com comportamento próximo de uma operação real.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Negócio mensurável</h3>
+          <p>Conversão, ticket médio, abandono, receita e pedidos conectados à experiência técnica da aplicação.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Observabilidade nativa</h3>
+          <p>A estrutura foi preparada para receber logs, métricas e traces com OpenTelemetry e Zabbix APM.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <aside class="cart-drawer" id="cartDrawer" aria-hidden="true">
+    <div class="cart-drawer__header">
+      <div><small>OBSSTORE</small><h2>Seu carrinho</h2></div>
+      <button type="button" id="cartClose" aria-label="Fechar carrinho">×</button>
+    </div>
+    <div class="cart-items" id="cartItems">
+      <div class="cart-empty" id="cartEmpty"><strong>Seu carrinho está vazio.</strong><span>Adicione produtos para começar.</span></div>
+    </div>
+    <div class="cart-summary">
+      <div><span>Subtotal</span><strong id="cartTotal">R$ 0,00</strong></div>
+      <button type="button" id="checkoutButton" disabled>Ir para o checkout</button>
+      <small>Checkout completo será habilitado na próxima etapa do laboratório.</small>
+    </div>
+  </aside>
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">Produto adicionado ao carrinho.</div>
+
+  <footer class="footer">
+    <div class="shell footer-grid">
+      <div>
+        <a class="brand brand--footer" href="/">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span class="brand-copy"><strong>OBS<span>STORE</span></strong><small>ECOMMERCE OBSERVABILITY LAB</small></span>
+        </a>
+        <p>Uma aplicação de demonstração criada para explorar experiência digital, negócio e observabilidade.</p>
+      </div>
+      <div><strong>Loja</strong><a href="#products">Produtos</a><a href="#offers">Ofertas</a><a href="/admin">Operação</a></div>
+      <div><strong>Laboratório</strong><a href="/status">Status da API</a><a href="/api/dashboard">API Dashboard</a><a href="/admin">Dashboard técnico</a></div>
+    </div>
+    <div class="shell footer-bottom"><span>ObsStore Lab</span><span>Powered by observability.</span></div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='obsstore.js') }}"></script>
+</body>
+</html>
