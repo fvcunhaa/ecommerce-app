@@ -882,75 +882,6 @@ def calcular_metricas_endpoint():
     return dados
 
 
-def atualizar_endpoints_por_coleta():
-    simulacao = {
-        "/status": {
-            "response_code": 200,
-            "latencia_ms": uniform(40, 90)
-        },
-        "/login": {
-            "response_code": 200,
-            "latencia_ms": uniform(90, 220)
-        },
-        "/produtos": {
-            "response_code": 200,
-            "latencia_ms": uniform(120, 280)
-        },
-        "/carrinho/criar": {
-            "response_code": 200,
-            "latencia_ms": uniform(100, 260)
-        },
-        "/carrinho/adicionar": {
-            "response_code": 200,
-            "latencia_ms": uniform(90, 240)
-        },
-        "/carrinho/resumo": {
-            "response_code": 200,
-            "latencia_ms": uniform(100, 260)
-        },
-        "/checkout": {
-            "response_code": 200,
-            "latencia_ms": uniform(180, 420)
-        },
-        "/endereco": {
-            "response_code": 200,
-            "latencia_ms": uniform(120, 300)
-        },
-        "/pagamento/pix": {
-            "response_code": 200,
-            "latencia_ms": uniform(180, 450)
-        },
-        "/pagamento/boleto": {
-            "response_code": 500,
-            "latencia_ms": uniform(7000, 12000)
-        },
-        "/pagamento/cartao": {
-            "response_code": 200,
-            "latencia_ms": uniform(250, 650)
-        },
-        "/sucesso": {
-            "response_code": 200,
-            "latencia_ms": uniform(100, 250)
-        }
-    }
-
-    for caminho, dados in simulacao.items():
-        response_code = dados["response_code"]
-        latencia_simulada_ms = dados["latencia_ms"]
-
-        endpoint = ENDPOINTS_MONITORADOS[caminho]
-
-        endpoint["total_chamadas"] += 1
-        endpoint["ultimo_status"] = response_code
-        endpoint["ultima_chamada"] = agora()
-        endpoint["tempo_total_ms"] += latencia_simulada_ms
-
-        if response_code < 400:
-            endpoint["sucessos"] += 1
-        else:
-            endpoint["falhas"] += 1
-
-
 # ============================================================
 # GERAÇÃO DE VENDAS
 # ============================================================
@@ -1302,17 +1233,18 @@ def api_store_checkout():
 
 @app.route("/api/coleta")
 def api_coleta():
-    novas_vendas = adicionar_novas_vendas()
-
-    atualizar_endpoints_por_coleta()
+    # Compatibilidade com integrações existentes: esta rota apenas atualiza
+    # o snapshot. Nenhuma venda, latência ou erro é fabricado pela coleta.
+    SIMULADOR["numero_coleta"] += 1
+    SIMULADOR["ultima_atualizacao"] = agora()
+    salvar_estado_simulador()
     atualizar_snapshot()
 
     metricas = obter_snapshot_metricas()
 
     return jsonify({
         "status": 1,
-        "mensagem": "Coleta executada com sucesso",
-        "novas_vendas": novas_vendas,
+        "mensagem": "Snapshot atualizado com dados reais da aplicação",
         "ultima_coleta": SNAPSHOT["ultima_coleta"],
         "coleta": metricas["coleta"],
         "resumo": metricas["resumo"],
@@ -1687,7 +1619,6 @@ def sucesso():
 aguardar_banco()
 inicializar_banco()
 iniciar_base(qtd_inicial=200)
-atualizar_endpoints_por_coleta()
 atualizar_snapshot()
 
 
