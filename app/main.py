@@ -12,6 +12,7 @@ from time import perf_counter
 from functools import wraps
 from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash, check_password_hash
+from opentelemetry import trace, metrics
 
 
 app = Flask(__name__)
@@ -26,6 +27,13 @@ DATABASE_URL = os.getenv(
 PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:5001").rstrip("/")
 SHIPPING_SERVICE_URL = os.getenv("SHIPPING_SERVICE_URL", "http://shipping-service:5002").rstrip("/")
 SERVICE_TIMEOUT_SECONDS = float(os.getenv("SERVICE_TIMEOUT_SECONDS", "5"))
+
+tracer = trace.get_tracer("obsstore.business")
+meter = metrics.get_meter("obsstore.business")
+checkout_counter = meter.create_counter("obsstore.checkout.attempts", description="Checkout attempts processed by ObsStore")
+orders_counter = meter.create_counter("obsstore.orders.completed", description="Successfully completed orders")
+revenue_counter = meter.create_counter("obsstore.revenue", unit="BRL", description="Gross revenue from completed orders")
+checkout_duration = meter.create_histogram("obsstore.checkout.duration", unit="ms", description="Checkout business flow duration")
 
 
 # ============================================================
@@ -747,7 +755,22 @@ def obter_store_products():
 
 
 def registrar_pedido_store(customer, items, payment_method="pix", source="store", user_id=None):
+    checkout_started = perf_counter()
+    checkout_counter.add(1, {"payment.method": payment_method, "order.source": source})
+    active_span = trace.get_current_span()
+    active_span.set_attribute("checkout.items", len(items))
+    active_span.set_attribute("payment.method", payment_method)
+    active_span.set_attribute("order.source", source)
+    if user_id:
+        active_span.set_attribute("enduser.id", str(user_id))
+
+    app.logger.info(
+        "checkout_started user_id=%s payment_method=%s source=%s cart_items=%s",
+        user_id, payment_method, source, len(items),
+    )
+
     if not items:
+        active_span.set_attribute("checkout.result", "empty_cart")
         raise ValueError("Carrinho vazio")
 
     if user_id:
@@ -778,92 +801,117 @@ def registrar_pedido_store(customer, items, payment_method="pix", source="store"
 
             normalized = []
             subtotal = 0.0
-            for item in items:
-                product_id = item.get("product_id")
-                quantity = max(1, min(int(item.get("quantity", 1)), 5))
-                cur.execute("""
-                    SELECT p.id, p.name, p.price, i.quantity, i.reserved
-                    FROM store_products p
-                    JOIN inventory i ON i.product_id = p.id
-                    WHERE p.id = %s AND p.active = TRUE
-                    FOR UPDATE;
-                """, (product_id,))
-                product = cur.fetchone()
-                if not product:
-                    raise ValueError(f"Produto inválido: {product_id}")
-                available = product["quantity"] - product["reserved"]
-                if available < quantity:
-                    raise ValueError(f"Estoque insuficiente para {product['name']}")
-                unit_price = float(product["price"])
-                line_total = round(unit_price * quantity, 2)
-                subtotal += line_total
-                normalized.append((product, quantity, unit_price, line_total))
+            with tracer.start_as_current_span("inventory.validate") as inventory_span:
+                inventory_span.set_attribute("cart.items", len(items))
+                for item in items:
+                    product_id = item.get("product_id")
+                    quantity = max(1, min(int(item.get("quantity", 1)), 5))
+                    inventory_span.set_attribute("product.id", product_id or "unknown")
+                    cur.execute("""
+                        SELECT p.id, p.name, p.price, i.quantity, i.reserved
+                        FROM store_products p
+                        JOIN inventory i ON i.product_id = p.id
+                        WHERE p.id = %s AND p.active = TRUE
+                        FOR UPDATE;
+                    """, (product_id,))
+                    product = cur.fetchone()
+                    if not product:
+                        inventory_span.set_attribute("inventory.result", "invalid_product")
+                        raise ValueError(f"Produto inválido: {product_id}")
+                    available = product["quantity"] - product["reserved"]
+                    if available < quantity:
+                        inventory_span.set_attribute("inventory.result", "insufficient_stock")
+                        raise ValueError(f"Estoque insuficiente para {product['name']}")
+                    unit_price = float(product["price"])
+                    line_total = round(unit_price * quantity, 2)
+                    subtotal += line_total
+                    normalized.append((product, quantity, unit_price, line_total))
+                inventory_span.set_attribute("inventory.result", "available")
 
             try:
-                shipping_response = requests.post(
-                    f"{SHIPPING_SERVICE_URL}/quote",
-                    json={"subtotal": round(subtotal, 2), "state": state},
-                    timeout=SERVICE_TIMEOUT_SECONDS,
-                )
-                shipping_response.raise_for_status()
-                shipping_data = shipping_response.json()
-                shipping = float(shipping_data["shipping"])
+                with tracer.start_as_current_span("shipping.quote") as shipping_span:
+                    shipping_span.set_attribute("customer.state", state)
+                    shipping_span.set_attribute("cart.subtotal", round(subtotal, 2))
+                    shipping_response = requests.post(
+                        f"{SHIPPING_SERVICE_URL}/quote",
+                        json={"subtotal": round(subtotal, 2), "state": state},
+                        timeout=SERVICE_TIMEOUT_SECONDS,
+                    )
+                    shipping_response.raise_for_status()
+                    shipping_data = shipping_response.json()
+                    shipping = float(shipping_data["shipping"])
+                    shipping_span.set_attribute("shipping.amount", shipping)
+                    shipping_span.set_attribute("shipping.eta_days", int(shipping_data.get("eta_days", 0)))
+                    app.logger.info("shipping_quote_received state=%s shipping=%s eta_days=%s", state, shipping, shipping_data.get("eta_days"))
             except (requests.RequestException, KeyError, ValueError) as error:
-                app.logger.exception("shipping service unavailable")
+                app.logger.exception("shipping_service_unavailable state=%s", state)
                 raise RuntimeError("Serviço de frete indisponível") from error
 
             discount = round(subtotal * 0.03, 2) if payment_method == "pix" else 0.0
             total = round(subtotal + shipping - discount, 2)
 
             try:
-                payment_response = requests.post(
-                    f"{PAYMENT_SERVICE_URL}/authorize",
-                    json={
-                        "amount": total,
-                        "method": payment_method,
-                        "customer_email": email,
-                    },
-                    timeout=SERVICE_TIMEOUT_SECONDS,
-                )
-                payment_data = payment_response.json()
+                with tracer.start_as_current_span("payment.authorize") as payment_span:
+                    payment_span.set_attribute("payment.method", payment_method)
+                    payment_span.set_attribute("payment.amount", total)
+                    payment_response = requests.post(
+                        f"{PAYMENT_SERVICE_URL}/authorize",
+                        json={"amount": total, "method": payment_method},
+                        timeout=SERVICE_TIMEOUT_SECONDS,
+                    )
+                    payment_data = payment_response.json()
+                    payment_span.set_attribute("payment.gateway.status_code", payment_response.status_code)
             except (requests.RequestException, ValueError) as error:
-                app.logger.exception("payment service unavailable")
+                app.logger.exception("payment_service_unavailable method=%s amount=%s", payment_method, total)
                 raise RuntimeError("Serviço de pagamento indisponível") from error
 
             if payment_response.status_code >= 400 or payment_data.get("status") != "approved":
                 reason = payment_data.get("reason", "payment_rejected")
+                active_span.set_attribute("checkout.result", "payment_rejected")
+                app.logger.warning("payment_rejected method=%s amount=%s reason=%s", payment_method, total, reason)
                 raise ValueError(f"Pagamento não aprovado: {reason}")
 
             transaction_id = payment_data["transaction_id"]
+            app.logger.info("payment_approved transaction_id=%s payment_method=%s amount=%s", transaction_id, payment_method, total)
 
-            cur.execute("""
-                INSERT INTO orders (
-                    customer_id, user_id, status, payment_method, subtotal, shipping, discount, total, source
-                )
-                VALUES (%s,%s,'paid',%s,%s,%s,%s,%s,%s)
-                RETURNING id, created_at;
-            """, (customer_id, user_id, payment_method, subtotal, shipping, discount, total, source))
-            order = cur.fetchone()
+            with tracer.start_as_current_span("order.persist") as order_span:
+                cur.execute("""
+                    INSERT INTO orders (
+                        customer_id, user_id, status, payment_method, subtotal, shipping, discount, total, source
+                    )
+                    VALUES (%s,%s,'paid',%s,%s,%s,%s,%s,%s)
+                    RETURNING id, created_at;
+                """, (customer_id, user_id, payment_method, subtotal, shipping, discount, total, source))
+                order = cur.fetchone()
+                order_span.set_attribute("order.id", int(order["id"]))
+                order_span.set_attribute("order.total", total)
+                order_span.set_attribute("payment.method", payment_method)
+                order_span.set_attribute("customer.state", state)
 
             for product, quantity, unit_price, line_total in normalized:
                 cur.execute("""
                     INSERT INTO order_items (order_id, product_id, quantity, unit_price, total)
                     VALUES (%s,%s,%s,%s,%s);
                 """, (order["id"], product["id"], quantity, unit_price, line_total))
-                cur.execute("""
-                    UPDATE inventory
-                    SET quantity = quantity - %s, updated_at = NOW()
-                    WHERE product_id = %s
-                    RETURNING quantity;
-                """, (quantity, product["id"]))
-                balance = cur.fetchone()["quantity"]
-                cur.execute("""
-                    INSERT INTO inventory_movements
-                    (product_id,movement_type,quantity,balance_after,reference_type,reference_id)
-                    VALUES(%s,'SALE',%s,%s,'order',%s);
-                """,(product["id"],-quantity,balance,order["id"]))
-                if balance == 0:
-                    ensure_purchase_order(cur, product["id"])
+                with tracer.start_as_current_span("inventory.update") as inventory_update_span:
+                    inventory_update_span.set_attribute("product.id", product["id"])
+                    inventory_update_span.set_attribute("product.quantity", quantity)
+                    cur.execute("""
+                        UPDATE inventory
+                        SET quantity = quantity - %s, updated_at = NOW()
+                        WHERE product_id = %s
+                        RETURNING quantity;
+                    """, (quantity, product["id"]))
+                    balance = cur.fetchone()["quantity"]
+                    inventory_update_span.set_attribute("inventory.balance_after", balance)
+                    cur.execute("""
+                        INSERT INTO inventory_movements
+                        (product_id,movement_type,quantity,balance_after,reference_type,reference_id)
+                        VALUES(%s,'SALE',%s,%s,'order',%s);
+                    """,(product["id"],-quantity,balance,order["id"]))
+                    if balance == 0:
+                        inventory_update_span.set_attribute("inventory.stockout", True)
+                        ensure_purchase_order(cur, product["id"])
 
             cur.execute("""
                 INSERT INTO payments (order_id, method, status, amount, transaction_id)
@@ -893,6 +941,22 @@ def registrar_pedido_store(customer, items, payment_method="pix", source="store"
     SIMULADOR["ultima_atualizacao"] = agora()
     salvar_estado_simulador()
     invalidar_snapshot()
+
+    elapsed_ms = round((perf_counter() - checkout_started) * 1000, 2)
+    item_count = sum(line[1] for line in normalized)
+    active_span.set_attribute("checkout.result", "paid")
+    active_span.set_attribute("order.id", int(order["id"]))
+    active_span.set_attribute("order.total", total)
+    active_span.set_attribute("customer.state", state)
+    active_span.set_attribute("cart.items", item_count)
+    active_span.set_attribute("payment.transaction_id", transaction_id)
+    orders_counter.add(1, {"payment.method": payment_method, "customer.state": state, "order.source": source})
+    revenue_counter.add(total, {"payment.method": payment_method, "customer.state": state, "order.source": source})
+    checkout_duration.record(elapsed_ms, {"payment.method": payment_method, "checkout.result": "paid"})
+    app.logger.info(
+        "order_confirmed order_id=%s transaction_id=%s total=%s payment_method=%s state=%s source=%s duration_ms=%s",
+        order["id"], transaction_id, total, payment_method, state, source, elapsed_ms,
+    )
 
     return {
         "order_id": int(order["id"]),
