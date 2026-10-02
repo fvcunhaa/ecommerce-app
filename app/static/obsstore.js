@@ -175,9 +175,11 @@
     const data = new FormData(checkoutForm);
     const grouped = new Map();
     cart.forEach(item => {
-      const current = grouped.get(item.name) || { product_id: item.id, quantity: 0 };
-      current.quantity += 1;
-      grouped.set(item.name, current);
+      const productId = item.product_id || item.id;
+      if (!productId) return;
+      const current = grouped.get(productId) || { product_id: productId, quantity: 0 };
+      current.quantity += Number(item.quantity || 1);
+      grouped.set(productId, current);
     });
 
     try {
