@@ -231,19 +231,18 @@
         </div>
         <button id="checkoutClose" type="button" aria-label="Fechar checkout">×</button>
       </div>
-      <form id="checkoutForm">
-        <div class="checkout-grid">
-          <label>Nome completo<input name="name" required placeholder="Cliente ObsStore"></label>
-          <label>E-mail<input name="email" type="email" required placeholder="cliente@obsstore.lab"></label>
-          <label>Estado
-            <select name="state" required>
-              <option value="SP">SP</option><option value="RJ">RJ</option><option value="MG">MG</option>
-              <option value="PR">PR</option><option value="RS">RS</option><option value="SC">SC</option>
-              <option value="BA">BA</option><option value="GO">GO</option><option value="PE">PE</option>
-              <option value="CE">CE</option><option value="ES">ES</option>
-            </select>
-          </label>
-          <label>Pagamento
+      {% if current_user %}
+      <form id="checkoutForm" data-authenticated="true">
+        <div class="checkout-customer">
+          <div>
+            <small>COMPRANDO COMO</small>
+            <strong>{{ current_user.name }}</strong>
+            <span>{{ current_user.email }} · {{ current_user.state }}</span>
+          </div>
+          <a href="/minha-conta">Minha conta</a>
+        </div>
+        <div class="checkout-grid checkout-grid--payment">
+          <label>Forma de pagamento
             <select name="payment_method" required>
               <option value="pix">PIX (3% de desconto)</option>
               <option value="credito">Cartão de crédito</option>
@@ -258,6 +257,15 @@
         <button class="checkout-submit" type="submit">Confirmar compra</button>
         <div class="checkout-result" id="checkoutResult" role="status" aria-live="polite"></div>
       </form>
+      {% else %}
+      <div id="checkoutForm" class="checkout-login-required" data-authenticated="false">
+        <strong>Entre na sua conta para finalizar a compra.</strong>
+        <p>Seus dados de cadastro serão usados automaticamente no pedido.</p>
+        <a class="checkout-submit checkout-login-link" href="/login">Entrar ou criar cadastro</a>
+        <div class="checkout-result" id="checkoutResult"></div>
+        <strong id="checkoutTotal" hidden>R$ 0,00</strong>
+      </div>
+      {% endif %}
     </div>
   </div>
   <div class="checkout-backdrop" id="checkoutBackdrop"></div>

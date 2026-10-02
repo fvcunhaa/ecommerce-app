@@ -1649,13 +1649,23 @@ def api_business_dashboard():
 @app.route("/api/store/checkout", methods=["POST"])
 def api_store_checkout():
     payload = request.get_json(silent=True) or {}
+    source = payload.get("source") or "store"
+    user_id = session.get("user_id")
+
+    if source == "store" and not user_id:
+        return jsonify({
+            "status": 0,
+            "message": "Faça login para finalizar a compra.",
+            "login_url": url_for("login")
+        }), 401
+
     try:
         order = registrar_pedido_store(
             customer=payload.get("customer") or {},
             items=payload.get("items") or [],
             payment_method=payload.get("payment_method") or "pix",
-            source=payload.get("source") or "store",
-            user_id=session.get("user_id")
+            source=source,
+            user_id=user_id
         )
         return jsonify({"status": 1, "order": order}), 201
     except ValueError as error:

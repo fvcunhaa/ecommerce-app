@@ -166,7 +166,7 @@
   checkoutClose.addEventListener("click", closeCheckout);
   checkoutBackdrop.addEventListener("click", closeCheckout);
 
-  checkoutForm.addEventListener("submit", async event => {
+  if (checkoutForm && checkoutForm.dataset.authenticated === "true") checkoutForm.addEventListener("submit", async event => {
     event.preventDefault();
     const submit = checkoutForm.querySelector(".checkout-submit");
     submit.disabled = true;
@@ -187,17 +187,16 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customer: {
-            name: data.get("name"),
-            email: data.get("email"),
-            state: data.get("state")
-          },
           payment_method: data.get("payment_method"),
           source: "store",
           items: [...grouped.values()]
         })
       });
       const payload = await response.json();
+      if (response.status === 401 && payload.login_url) {
+        window.location.href = payload.login_url;
+        return;
+      }
       if (!response.ok) throw new Error(payload.message || "Falha no checkout");
 
       checkoutResult.innerHTML = `<strong>Pedido #${payload.order.order_id} confirmado!</strong><br>Total: ${money(payload.order.total)} · Transação ${payload.order.transaction_id}`;
