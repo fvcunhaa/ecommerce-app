@@ -2,17 +2,20 @@ import os
 import time
 import psycopg2
 import requests
+import threading
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for
 from random import randint, uniform, choices
 from collections import defaultdict
 from datetime import datetime, timedelta
 from time import perf_counter
 from functools import wraps
 from psycopg2.extras import RealDictCursor
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "obsstore-lab-change-me")
 
 
 DATABASE_URL = os.getenv(
@@ -464,7 +467,110 @@ def inicializar_banco():
                     INSERT INTO inventory (product_id, quantity)
                     VALUES (%s, %s)
                     ON CONFLICT (product_id) DO NOTHING;
-                """, (product["id"], randint(80, 240)))
+                """, (product["id"], 50))
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key VARCHAR(120) PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(160) NOT NULL,
+                    email VARCHAR(200) UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    state VARCHAR(2) NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_addresses (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    label VARCHAR(80) NOT NULL DEFAULT 'Principal',
+                    street VARCHAR(200),
+                    city VARCHAR(120),
+                    state VARCHAR(2) NOT NULL,
+                    zip_code VARCHAR(20),
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS carts (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+                    session_key VARCHAR(120),
+                    status VARCHAR(30) NOT NULL DEFAULT 'open',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cart_items (
+                    id BIGSERIAL PRIMARY KEY,
+                    cart_id BIGINT NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+                    product_id VARCHAR(80) NOT NULL REFERENCES store_products(id),
+                    quantity INTEGER NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE(cart_id, product_id)
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS suppliers (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(160) UNIQUE NOT NULL,
+                    active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS purchase_orders (
+                    id BIGSERIAL PRIMARY KEY,
+                    supplier_id BIGINT NOT NULL REFERENCES suppliers(id),
+                    product_id VARCHAR(80) NOT NULL REFERENCES store_products(id),
+                    quantity INTEGER NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'ordered',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    in_transit_at TIMESTAMP,
+                    received_at TIMESTAMP
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inventory_movements (
+                    id BIGSERIAL PRIMARY KEY,
+                    product_id VARCHAR(80) NOT NULL REFERENCES store_products(id),
+                    movement_type VARCHAR(30) NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    balance_after INTEGER NOT NULL,
+                    reference_type VARCHAR(40),
+                    reference_id BIGINT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            cur.execute("""
+                INSERT INTO suppliers (name)
+                VALUES ('Tech Distribution Brasil')
+                ON CONFLICT (name) DO NOTHING;
+            """)
+
+            cur.execute("SELECT value FROM app_settings WHERE key='inventory_seed_50_v1';")
+            if cur.fetchone() is None:
+                cur.execute("UPDATE inventory SET quantity=50, reserved=0, updated_at=NOW();")
+                cur.execute("""
+                    INSERT INTO app_settings (key, value)
+                    VALUES ('inventory_seed_50_v1','applied');
+                """)
 
         conn.commit()
 
@@ -730,8 +836,17 @@ def registrar_pedido_store(customer, items, payment_method="pix", source="store"
                 cur.execute("""
                     UPDATE inventory
                     SET quantity = quantity - %s, updated_at = NOW()
-                    WHERE product_id = %s;
+                    WHERE product_id = %s
+                    RETURNING quantity;
                 """, (quantity, product["id"]))
+                balance = cur.fetchone()["quantity"]
+                cur.execute("""
+                    INSERT INTO inventory_movements
+                    (product_id,movement_type,quantity,balance_after,reference_type,reference_id)
+                    VALUES(%s,'SALE',%s,%s,'order',%s);
+                """,(product["id"],-quantity,balance,order["id"]))
+                if balance == 0:
+                    ensure_purchase_order(cur, product["id"])
 
             cur.execute("""
                 INSERT INTO payments (order_id, method, status, amount, transaction_id)
@@ -797,6 +912,190 @@ def obter_resumo_store():
         "average_ticket": round(float(today["average_ticket"]), 2),
         "customers": int(customers),
         "stock_units": int(stock)
+    }
+
+
+def get_current_user():
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, name, email, state, created_at FROM users WHERE id=%s;", (user_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def get_or_create_cart():
+    if "cart_session" not in session:
+        session["cart_session"] = f"cart-{int(time.time()*1000)}-{randint(1000,9999)}"
+    user_id = session.get("user_id")
+    session_key = session["cart_session"]
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if user_id:
+                cur.execute("SELECT id FROM carts WHERE user_id=%s AND status='open' ORDER BY id DESC LIMIT 1;", (user_id,))
+            else:
+                cur.execute("SELECT id FROM carts WHERE session_key=%s AND status='open' ORDER BY id DESC LIMIT 1;", (session_key,))
+            row = cur.fetchone()
+            if row:
+                return int(row["id"])
+            cur.execute(
+                "INSERT INTO carts (user_id, session_key) VALUES (%s,%s) RETURNING id;",
+                (user_id, session_key)
+            )
+            cart_id = int(cur.fetchone()["id"])
+        conn.commit()
+    return cart_id
+
+
+def cart_payload():
+    cart_id = get_or_create_cart()
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT ci.product_id, ci.quantity, p.name, p.price,
+                       i.quantity AS stock
+                FROM cart_items ci
+                JOIN store_products p ON p.id=ci.product_id
+                JOIN inventory i ON i.product_id=ci.product_id
+                WHERE ci.cart_id=%s
+                ORDER BY ci.id;
+            """, (cart_id,))
+            rows = cur.fetchall()
+    items = []
+    total = 0.0
+    for row in rows:
+        price = float(row["price"])
+        line_total = round(price * row["quantity"], 2)
+        total += line_total
+        items.append({
+            "product_id": row["product_id"],
+            "name": row["name"],
+            "price": price,
+            "quantity": row["quantity"],
+            "stock": row["stock"],
+            "line_total": line_total
+        })
+    return {"cart_id": cart_id, "items": items, "subtotal": round(total, 2)}
+
+
+def ensure_purchase_order(cur, product_id):
+    cur.execute("""
+        SELECT id FROM purchase_orders
+        WHERE product_id=%s AND status IN ('ordered','in_transit')
+        LIMIT 1;
+    """, (product_id,))
+    if cur.fetchone():
+        return
+    cur.execute("SELECT id FROM suppliers WHERE active=TRUE ORDER BY id LIMIT 1;")
+    supplier = cur.fetchone()
+    if not supplier:
+        return
+    cur.execute("""
+        INSERT INTO purchase_orders (supplier_id, product_id, quantity, status)
+        VALUES (%s,%s,50,'ordered');
+    """, (supplier[0], product_id))
+
+
+def process_restock_cycle():
+    while True:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute("""
+                        UPDATE purchase_orders
+                        SET status='in_transit', in_transit_at=NOW()
+                        WHERE status='ordered' AND created_at <= NOW() - INTERVAL '30 seconds'
+                        RETURNING id;
+                    """)
+                    cur.execute("""
+                        SELECT id, product_id, quantity
+                        FROM purchase_orders
+                        WHERE status='in_transit'
+                          AND in_transit_at <= NOW() - INTERVAL '60 seconds'
+                        FOR UPDATE;
+                    """)
+                    orders = cur.fetchall()
+                    for po in orders:
+                        cur.execute("""
+                            UPDATE inventory
+                            SET quantity=quantity+%s, updated_at=NOW()
+                            WHERE product_id=%s
+                            RETURNING quantity;
+                        """, (po["quantity"], po["product_id"]))
+                        balance = cur.fetchone()["quantity"]
+                        cur.execute("""
+                            INSERT INTO inventory_movements
+                            (product_id, movement_type, quantity, balance_after, reference_type, reference_id)
+                            VALUES (%s,'RESTOCK',%s,%s,'purchase_order',%s);
+                        """, (po["product_id"], po["quantity"], balance, po["id"]))
+                        cur.execute("""
+                            UPDATE purchase_orders
+                            SET status='received', received_at=NOW()
+                            WHERE id=%s;
+                        """, (po["id"],))
+                conn.commit()
+        except Exception:
+            app.logger.exception("restock cycle failed")
+        time.sleep(10)
+
+
+def business_dashboard():
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT COALESCE(SUM(total),0) revenue, COUNT(*) orders,
+                       COALESCE(AVG(total),0) avg_ticket
+                FROM orders WHERE created_at >= CURRENT_DATE;
+            """)
+            summary = cur.fetchone()
+            cur.execute("""
+                SELECT c.state, COALESCE(SUM(o.total),0) revenue, COUNT(*) orders
+                FROM orders o JOIN customers c ON c.id=o.customer_id
+                GROUP BY c.state ORDER BY revenue DESC;
+            """)
+            states = [dict(x) for x in cur.fetchall()]
+            cur.execute("""
+                SELECT p.id, p.name, COALESCE(SUM(oi.quantity),0) units,
+                       COALESCE(SUM(oi.total),0) revenue
+                FROM store_products p
+                LEFT JOIN order_items oi ON oi.product_id=p.id
+                GROUP BY p.id,p.name ORDER BY units DESC, p.name;
+            """)
+            products = [dict(x) for x in cur.fetchall()]
+            cur.execute("""
+                SELECT p.id,p.name,p.category,i.quantity,
+                       CASE WHEN i.quantity=0 THEN 'out_of_stock'
+                            WHEN i.quantity<=10 THEN 'critical' ELSE 'ok' END status
+                FROM inventory i JOIN store_products p ON p.id=i.product_id
+                ORDER BY i.quantity ASC,p.name;
+            """)
+            stock = [dict(x) for x in cur.fetchall()]
+            cur.execute("""
+                SELECT po.id,p.name product,po.quantity,po.status,
+                       po.created_at,po.in_transit_at,po.received_at
+                FROM purchase_orders po JOIN store_products p ON p.id=po.product_id
+                ORDER BY po.id DESC LIMIT 20;
+            """)
+            replenishment = [dict(x) for x in cur.fetchall()]
+            cur.execute("""
+                SELECT source, COUNT(*) orders, COALESCE(SUM(total),0) revenue
+                FROM orders GROUP BY source ORDER BY revenue DESC;
+            """)
+            sources = [dict(x) for x in cur.fetchall()]
+    return {
+        "summary": {
+            "revenue": float(summary["revenue"]),
+            "orders": summary["orders"],
+            "average_ticket": round(float(summary["avg_ticket"]),2),
+            "target": 100000
+        },
+        "states": [{"state":x["state"],"revenue":float(x["revenue"]),"orders":x["orders"]} for x in states],
+        "products": [{"id":x["id"],"name":x["name"],"units":x["units"],"revenue":float(x["revenue"])} for x in products],
+        "stock": stock,
+        "replenishment": replenishment,
+        "sources": [{"source":x["source"],"orders":x["orders"],"revenue":float(x["revenue"])} for x in sources]
     }
 
 
@@ -1227,11 +1526,16 @@ def obter_endpoint_do_snapshot(caminho):
 
 @app.route("/")
 def index():
-    return render_template("home.html", products=STORE_PRODUCTS)
+    return render_template("home.html", products=obter_store_products(), current_user=get_current_user())
 
 
 @app.route("/admin")
 def admin():
+    return render_template("business.html")
+
+
+@app.route("/admin/legacy")
+def admin_legacy():
     return render_template("index.html")
 
 
@@ -1243,6 +1547,86 @@ def api_store_products():
 @app.route("/api/store/summary")
 def api_store_summary():
     return jsonify(obter_resumo_store())
+
+
+@app.route("/api/catalog/search")
+def api_catalog_search():
+    q=(request.args.get("q") or "").strip().lower()
+    category=(request.args.get("category") or "").strip()
+    products=obter_store_products()
+    filtered=[]
+    for product in products:
+        if q and q not in product["name"].lower() and q not in product["description"].lower() and q not in product["category"].lower():
+            continue
+        if category and category!="Todos" and product["category"]!=category:
+            continue
+        filtered.append(product)
+    return jsonify({"products": filtered, "count": len(filtered)})
+
+
+@app.route("/produto/<product_id>")
+def product_detail(product_id):
+    products=obter_store_products()
+    product=next((p for p in products if p["id"]==product_id),None)
+    if not product:
+        return "Produto não encontrado",404
+    return render_template("product.html", product=product, current_user=get_current_user())
+
+
+@app.route("/api/cart")
+def api_cart_get():
+    return jsonify(cart_payload())
+
+
+@app.route("/api/cart/add", methods=["POST"])
+def api_cart_add():
+    payload=request.get_json(silent=True) or {}
+    product_id=payload.get("product_id")
+    quantity=max(1,min(int(payload.get("quantity",1)),5))
+    cart_id=get_or_create_cart()
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT quantity FROM inventory WHERE product_id=%s;",(product_id,))
+            inv=cur.fetchone()
+            if not inv:
+                return jsonify({"status":0,"message":"Produto inválido"}),404
+            if inv["quantity"]<=0:
+                return jsonify({"status":0,"message":"Produto sem estoque"}),409
+            cur.execute("""
+                INSERT INTO cart_items(cart_id,product_id,quantity)
+                VALUES(%s,%s,%s)
+                ON CONFLICT(cart_id,product_id)
+                DO UPDATE SET quantity=LEAST(cart_items.quantity+EXCLUDED.quantity,5);
+            """,(cart_id,product_id,quantity))
+            cur.execute("UPDATE carts SET updated_at=NOW() WHERE id=%s;",(cart_id,))
+        conn.commit()
+    return jsonify(cart_payload())
+
+
+@app.route("/api/cart/remove", methods=["POST"])
+def api_cart_remove():
+    payload=request.get_json(silent=True) or {}
+    cart_id=get_or_create_cart()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM cart_items WHERE cart_id=%s AND product_id=%s;",(cart_id,payload.get("product_id")))
+        conn.commit()
+    return jsonify(cart_payload())
+
+
+@app.route("/api/cart/clear", methods=["POST"])
+def api_cart_clear():
+    cart_id=get_or_create_cart()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM cart_items WHERE cart_id=%s;",(cart_id,))
+        conn.commit()
+    return jsonify(cart_payload())
+
+
+@app.route("/api/business/dashboard")
+def api_business_dashboard():
+    return jsonify(business_dashboard())
 
 
 @app.route("/api/store/checkout", methods=["POST"])
@@ -1522,13 +1906,68 @@ def status():
     })
 
 
-@app.route("/login")
-@monitorar_endpoint
+@app.route("/login", methods=["GET","POST"])
 def login():
-    return jsonify({
-        "status": 1,
-        "mensagem": "Login realizado com sucesso"
-    })
+    if request.method == "GET":
+        return render_template("login.html", current_user=get_current_user())
+    email = (request.form.get("email") or "").strip().lower()
+    password = request.form.get("password") or ""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id,name,email,state,password_hash FROM users WHERE email=%s;", (email,))
+            user = cur.fetchone()
+    if not user or not check_password_hash(user["password_hash"], password):
+        return render_template("login.html", error="E-mail ou senha inválidos."), 401
+    session["user_id"] = int(user["id"])
+    return redirect(url_for("account"))
+
+
+@app.route("/cadastro", methods=["GET","POST"])
+def cadastro():
+    if request.method == "GET":
+        return render_template("register.html")
+    name = (request.form.get("name") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+    password = request.form.get("password") or ""
+    state = (request.form.get("state") or "SP").upper()[:2]
+    if not name or not email or len(password) < 6:
+        return render_template("register.html", error="Preencha os campos e use uma senha com pelo menos 6 caracteres."), 400
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO users(name,email,password_hash,state)
+                    VALUES(%s,%s,%s,%s) RETURNING id;
+                """,(name,email,generate_password_hash(password),state))
+                user_id=cur.fetchone()[0]
+            conn.commit()
+    except psycopg2.IntegrityError:
+        return render_template("register.html", error="Já existe uma conta com este e-mail."), 409
+    session["user_id"]=int(user_id)
+    return redirect(url_for("account"))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("index"))
+
+
+@app.route("/minha-conta")
+def account():
+    user=get_current_user()
+    if not user:
+        return redirect(url_for("login"))
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id,status,payment_method,total,source,created_at
+                FROM orders WHERE customer_id IN (
+                    SELECT id FROM customers WHERE email=%s
+                ) ORDER BY id DESC LIMIT 30;
+            """,(user["email"],))
+            orders=[dict(x) for x in cur.fetchall()]
+    return render_template("account.html", user=user, orders=orders)
 
 
 @app.route("/produtos")
@@ -1659,6 +2098,7 @@ aguardar_banco()
 inicializar_banco()
 iniciar_base(qtd_inicial=200)
 atualizar_snapshot()
+threading.Thread(target=process_restock_cycle, daemon=True).start()
 
 
 if __name__ == "__main__":

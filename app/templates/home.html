@@ -33,17 +33,17 @@
         </span>
       </a>
 
-      <form class="search" id="searchForm" role="search">
+      <form class="search" id="searchForm" role="search" action="/" method="get">
         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.3-4.3m1.3-5.2A6.5 6.5 0 1 1 5 11.5a6.5 6.5 0 0 1 13 0Z"/></svg>
-        <input id="searchInput" type="search" placeholder="O que você está procurando?" autocomplete="off">
+        <input id="searchInput" name="q" type="search" placeholder="Busque notebook, celular, SSD..." autocomplete="off">
         <button type="submit">Buscar</button>
       </form>
 
       <nav class="header-actions" aria-label="Ações">
-        <button class="icon-action" type="button" aria-label="Minha conta">
+        <a class="icon-action account-link" href="{{ '/minha-conta' if current_user else '/login' }}" aria-label="Minha conta">
           <span class="icon-action__icon">◎</span>
-          <span><small>Olá, visitante</small><strong>Minha conta</strong></span>
-        </button>
+          <span><small>{{ 'Olá, ' ~ current_user.name if current_user else 'Olá, visitante' }}</small><strong>{{ 'Minha conta' if current_user else 'Entrar ou cadastrar' }}</strong></span>
+        </a>
         <button class="icon-action cart-trigger" id="cartTrigger" type="button" aria-label="Abrir carrinho">
           <span class="icon-action__icon">◫</span>
           <span><small>Seu carrinho</small><strong><span id="cartCount">0</span> itens</strong></span>
@@ -139,16 +139,18 @@
           </div>
           <div class="product-card__content">
             <span class="product-category">{{ product.category }}</span>
-            <h3>{{ product.name }}</h3>
+            <h3><a class="product-title-link" href="/produto/{{ product.id }}">{{ product.name }}</a></h3>
             <p>{{ product.description }}</p>
-            <div class="rating" aria-label="Avaliação 4,9 de 5"><span>★★★★★</span><small>4,9</small></div>
+            <div class="stock-line {{ 'stock-out' if product.quantity == 0 else ('stock-low' if product.quantity <= 10 else '') }}">
+              {% if product.quantity == 0 %}Sem estoque · reposição em andamento{% else %}{{ product.quantity }} unidades em estoque{% endif %}
+            </div>
             <div class="price-block">
               <small>de R$ {{ "%.2f"|format(product.old_price)|replace(".", ",") }}</small>
               <strong>R$ {{ "%.2f"|format(product.price)|replace(".", ",") }}</strong>
               <span>ou 10x sem juros</span>
             </div>
-            <button class="add-cart" type="button" data-product="{{ product.name }}" data-price="{{ product.price }}">
-              Adicionar ao carrinho
+            <button class="add-cart" type="button" data-product="{{ product.name }}" data-price="{{ product.price }}" {% if product.quantity == 0 %}disabled{% endif %}>
+              {{ 'Indisponível' if product.quantity == 0 else 'Adicionar ao carrinho' }}
             </button>
           </div>
         </article>
@@ -215,7 +217,7 @@
     <div class="cart-summary">
       <div><span>Subtotal</span><strong id="cartTotal">R$ 0,00</strong></div>
       <button type="button" id="checkoutButton" disabled>Ir para o checkout</button>
-      <small>Checkout completo será habilitado na próxima etapa do laboratório.</small>
+      <small>Carrinho persistente e checkout integrado aos serviços da ObsStore.</small>
     </div>
   </aside>
   <div class="drawer-backdrop" id="drawerBackdrop"></div>

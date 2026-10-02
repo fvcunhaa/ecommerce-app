@@ -31,18 +31,21 @@
     return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
 
-  function applyFilters() {
-    const term = searchInput.value.trim().toLowerCase();
-    let count = 0;
-    cards.forEach(card => {
-      const matchesCategory = category === "Todos" || card.dataset.category === category;
-      const matchesSearch = !term || card.dataset.name.includes(term) || card.dataset.category.toLowerCase().includes(term);
-      const visible = matchesCategory && matchesSearch;
-      card.hidden = !visible;
-      if (visible) count += 1;
-    });
-    visibleCount.textContent = count;
-    emptyState.hidden = count !== 0;
+  async function applyFilters() {
+    const term = searchInput.value.trim();
+    const params = new URLSearchParams();
+    if (term) params.set("q", term);
+    if (category && category !== "Todos") params.set("category", category);
+    try {
+      const response = await fetch("/api/catalog/search?" + params.toString());
+      const payload = await response.json();
+      const ids = new Set((payload.products || []).map(item => item.id));
+      cards.forEach(card => card.hidden = !ids.has(card.dataset.productId));
+      visibleCount.textContent = payload.count || 0;
+      emptyState.hidden = (payload.count || 0) !== 0;
+    } catch {
+      visibleCount.textContent = cards.length;
+    }
   }
 
   pills.forEach(pill => {
@@ -83,20 +86,27 @@
     let total = 0;
 
     cart.forEach((item, index) => {
-      total += item.price;
+      total += item.price * (item.quantity || 1);
       const row = document.createElement("div");
       row.className = "cart-item";
       row.innerHTML = `
         <div class="cart-item__visual"></div>
-        <div><strong>${item.name}</strong><small>${money(item.price)}</small></div>
+        <div><strong>${item.name}</strong><small>${item.quantity || 1} × ${money(item.price)}</small></div>
         <button type="button" aria-label="Remover ${item.name}" data-remove="${index}">×</button>
       `;
       cartItems.appendChild(row);
     });
 
     cartItems.querySelectorAll("[data-remove]").forEach(button => {
-      button.addEventListener("click", () => {
-        cart.splice(Number(button.dataset.remove), 1);
+      button.addEventListener("click", async () => {
+        const item = cart[Number(button.dataset.remove)];
+        const response = await fetch("/api/cart/remove", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({product_id:item.product_id || item.id})
+        });
+        const payload = await response.json();
+        cart = payload.items || [];
         renderCart();
       });
     });
@@ -116,25 +126,23 @@
 
   document.querySelectorAll(".add-cart").forEach(button => {
     button.addEventListener("click", async () => {
-      button.classList.add("loading");
       const card = button.closest(".product-card");
-      const product = { id: card.dataset.productId, name: button.dataset.product, price: Number(button.dataset.price) };
+      button.classList.add("loading");
       try {
-        const response = await fetch("/carrinho/adicionar");
-        if (!response.ok) throw new Error("Falha ao registrar carrinho");
-        cart.push(product);
+        const response = await fetch("/api/cart/add", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({product_id: card.dataset.productId, quantity: 1})
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || "Falha ao adicionar");
+        cart = payload.items || [];
         renderCart();
-        button.classList.remove("loading");
-        button.classList.add("added");
-        button.textContent = "Adicionado";
-        showToast(`${product.name} adicionado ao carrinho`);
-        window.setTimeout(() => {
-          button.classList.remove("added");
-          button.textContent = "Adicionar ao carrinho";
-        }, 1300);
+        showToast(button.dataset.product + " adicionado ao carrinho");
       } catch (error) {
+        showToast(error.message);
+      } finally {
         button.classList.remove("loading");
-        showToast("Não foi possível adicionar o produto.");
       }
     });
   });
@@ -191,6 +199,7 @@
       if (!response.ok) throw new Error(payload.message || "Falha no checkout");
 
       checkoutResult.innerHTML = `<strong>Pedido #${payload.order.order_id} confirmado!</strong><br>Total: ${money(payload.order.total)} · Transação ${payload.order.transaction_id}`;
+      await fetch("/api/cart/clear", {method:"POST"});
       cart = [];
       renderCart();
       checkoutForm.reset();
@@ -209,5 +218,15 @@
     });
   });
 
-  renderCart();
+  async function loadCart() {
+    try {
+      const response = await fetch("/api/cart");
+      const payload = await response.json();
+      cart = payload.items || [];
+    } finally {
+      renderCart();
+    }
+  }
+
+  loadCart();
 })();
