@@ -489,6 +489,11 @@ def inicializar_banco():
             """)
 
             cur.execute("""
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS user_id BIGINT;
+            """)
+
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_addresses (
                     id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -741,9 +746,21 @@ def obter_store_products():
     } for row in rows]
 
 
-def registrar_pedido_store(customer, items, payment_method="pix", source="store"):
+def registrar_pedido_store(customer, items, payment_method="pix", source="store", user_id=None):
     if not items:
         raise ValueError("Carrinho vazio")
+
+    if user_id:
+        with get_db_connection() as user_conn:
+            with user_conn.cursor(cursor_factory=RealDictCursor) as user_cur:
+                user_cur.execute("SELECT name,email,state FROM users WHERE id=%s;", (user_id,))
+                logged_user = user_cur.fetchone()
+        if logged_user:
+            customer = {
+                "name": logged_user["name"],
+                "email": logged_user["email"],
+                "state": logged_user["state"]
+            }
 
     state = (customer.get("state") or "SP").upper()[:2]
     email = (customer.get("email") or f"guest-{int(time.time()*1000)}@obsstore.lab").lower()
@@ -821,11 +838,11 @@ def registrar_pedido_store(customer, items, payment_method="pix", source="store"
 
             cur.execute("""
                 INSERT INTO orders (
-                    customer_id, status, payment_method, subtotal, shipping, discount, total, source
+                    customer_id, user_id, status, payment_method, subtotal, shipping, discount, total, source
                 )
-                VALUES (%s,'paid',%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,'paid',%s,%s,%s,%s,%s,%s)
                 RETURNING id, created_at;
-            """, (customer_id, payment_method, subtotal, shipping, discount, total, source))
+            """, (customer_id, user_id, payment_method, subtotal, shipping, discount, total, source))
             order = cur.fetchone()
 
             for product, quantity, unit_price, line_total in normalized:
@@ -1637,7 +1654,8 @@ def api_store_checkout():
             customer=payload.get("customer") or {},
             items=payload.get("items") or [],
             payment_method=payload.get("payment_method") or "pix",
-            source=payload.get("source") or "store"
+            source=payload.get("source") or "store",
+            user_id=session.get("user_id")
         )
         return jsonify({"status": 1, "order": order}), 201
     except ValueError as error:
@@ -1960,13 +1978,26 @@ def account():
         return redirect(url_for("login"))
     with get_db_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Migra pedidos antigos do mesmo e-mail para a conta autenticada.
+            cur.execute("""
+                UPDATE orders
+                SET user_id=%s
+                WHERE user_id IS NULL
+                  AND customer_id IN (
+                    SELECT id FROM customers WHERE LOWER(email)=LOWER(%s)
+                  );
+            """, (user["id"], user["email"]))
             cur.execute("""
                 SELECT id,status,payment_method,total,source,created_at
-                FROM orders WHERE customer_id IN (
-                    SELECT id FROM customers WHERE email=%s
-                ) ORDER BY id DESC LIMIT 30;
-            """,(user["email"],))
+                FROM orders
+                WHERE user_id=%s
+                   OR customer_id IN (
+                       SELECT id FROM customers WHERE LOWER(email)=LOWER(%s)
+                   )
+                ORDER BY id DESC LIMIT 30;
+            """,(user["id"], user["email"]))
             orders=[dict(x) for x in cur.fetchall()]
+        conn.commit()
     return render_template("account.html", user=user, orders=orders)
 
 
